@@ -1,5 +1,3 @@
-import java.net.URL
-
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -35,36 +33,9 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }
 
-/**
- * Unduh JetBrains Mono ke res/font sebelum resource dikompilasi.
- * Kalau unduhan gagal (offline), build tetap berhasil dan aplikasi
- * otomatis memakai monospace bawaan sistem (lihat Fonts.kt).
- */
-val fetchFont by tasks.registering {
-    val outFile = file("src/main/res/font/jetbrains_mono.ttf")
-    outputs.file(outFile)
-    onlyIf { !outFile.exists() }
-    doLast {
-        val url = "https://raw.githubusercontent.com/JetBrains/JetBrainsMono/" +
-                  "v2.304/fonts/ttf/JetBrainsMono-Regular.ttf"
-        try {
-            outFile.parentFile.mkdirs()
-            URL(url).openStream().use { input ->
-                outFile.outputStream().use { output -> input.copyTo(output) }
-            }
-            logger.lifecycle("fetchFont: JetBrains Mono berhasil diunduh")
-        } catch (e: Exception) {
-            logger.warn("fetchFont: gagal mengunduh font (${e.message}); " +
-                        "aplikasi akan memakai monospace bawaan sistem")
-        }
-    }
-}
-
-tasks.configureEach {
-    if (name.startsWith("generate") && name.endsWith("Resources")) {
-        dependsOn(fetchFont)
-    }
-    if (name.startsWith("merge") && name.endsWith("Resources")) {
-        dependsOn(fetchFont)
-    }
-}
+// Catatan font:
+// JetBrains Mono diletakkan di src/main/res/font/jetbrains_mono.ttf.
+// Di CI, file itu diunduh oleh workflow sebelum Gradle dijalankan.
+// Untuk build lokal, jalankan skrip android/fetch-font.sh (atau .bat),
+// atau biarkan kosong — aplikasi otomatis memakai monospace bawaan sistem
+// (lihat Fonts.kt), sehingga build tetap berhasil tanpa file font.
