@@ -1,5 +1,31 @@
 # Changelog
 
+## v2.4
+
+### Perbaikan fatal
+- **Semua koneksi ditolak `500 Internal Server Error` sejak v2.3** — termasuk
+  USB yang sebelumnya normal. Halaman tes (`process_request`) ditulis memakai
+  API `websockets` lama `(path, headers)`, sedangkan websockets 14+ memakai
+  `(connection, request)`. Di PC dengan versi baru, setiap handshake gagal.
+  Pin versi di `requirements.txt` tidak pernah menolong karena
+  `start_server.bat` hanya mengecek modul *ada*, bukan versinya.
+  Server kini **mendeteksi generasi API dan menyesuaikan diri**, diuji lulus
+  di websockets **12.0, 13.1, dan 15.0.1**.
+- **Tombol Perbaiki Firewall tidak berefek** — perintah memakai `;` sebagai
+  pemisah, padahal `cmd.exe` memakai `&`. Kini memanggil `fix_firewall.bat`
+  terpisah lewat UAC, lalu **memverifikasi** hasilnya. Aturan juga dipasang
+  per-program untuk `python`/`pythonw`, bukan hanya per-port.
+
+### Ketahanan
+- Server melakukan **uji mandiri** setelah start. Bila tidak bisa dihubungi,
+  jendela server menampilkan status merah dan alasannya — tidak lagi terlihat
+  sehat padahal mati.
+
+### Tampilan
+- **Logo aplikasi baru**: adaptive icon dengan latar gradasi ungu dan lambang
+  trackpad + kursor.
+
+
 ## v2.3
 
 ### Perbaikan koneksi WiFi/Hotspot (akar masalah ditemukan)
