@@ -9,6 +9,7 @@ import androidx.appcompat.app.AppCompatActivity
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
+import java.net.NetworkInterface
 
 class MainActivity : AppCompatActivity() {
 
@@ -20,12 +21,8 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         Haptics.init(this)
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-            try {
-                window.addFlags(android.view.WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
-                window.attributes = window.attributes.apply { blurBehindRadius = 70 }
-            } catch (e: Exception) { }
-        }
+        Glass.apply(this, findViewById(R.id.rootMain))
+        Accent.refresh()
         Accent.applyToKey(findViewById(R.id.btnConnect))
 
         etIp = findViewById(R.id.etIp)
@@ -89,36 +86,68 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-        WsClient.connect(host, 8765, pin)
+        WsClient.connect(host, 8765, pin, appVersion())
     }
+
+    private fun appVersion(): String = try {
+        packageManager.getPackageInfo(packageName, 0).versionName ?: "0"
+    } catch (e: Exception) { "0" }
 
     private fun scan() {
         tvStatus.text = "mencari pc di jaringan…"
         Thread {
+            var found = false
             var sock: DatagramSocket? = null
             try {
                 sock = DatagramSocket()
                 sock.broadcast = true
-                sock.soTimeout = 2500
+                sock.soTimeout = 1800
                 val msg = "DISCOVER_CLAUDEPAD".toByteArray()
-                sock.send(DatagramPacket(msg, msg.size,
-                    InetAddress.getByName("255.255.255.255"), 8766))
-                val buf = ByteArray(256)
-                val resp = DatagramPacket(buf, buf.size)
-                sock.receive(resp)
-                val parts = String(resp.data, 0, resp.length).split("|")
-                if (parts.isNotEmpty() && parts[0] == "CLAUDEPAD") {
-                    val ip = resp.address.hostAddress ?: ""
-                    runOnUiThread {
-                        etIp.setText(ip)
-                        Haptics.heavy()
-                        tvStatus.text = "ketemu: ${parts.getOrNull(1) ?: ""} ($ip)"
+
+                // target: broadcast global + broadcast tiap interface (hotspot
+                // sering tidak meneruskan 255.255.255.255)
+                val targets = mutableSetOf<InetAddress>()
+                try { targets.add(InetAddress.getByName("255.255.255.255")) } catch (e: Exception) {}
+                try {
+                    val ifs = NetworkInterface.getNetworkInterfaces()
+                    while (ifs.hasMoreElements()) {
+                        val ni = ifs.nextElement()
+                        if (!ni.isUp || ni.isLoopback) continue
+                        for (ia in ni.interfaceAddresses) {
+                            ia.broadcast?.let { targets.add(it) }
+                        }
                     }
+                } catch (e: Exception) {}
+
+                val buf = ByteArray(256)
+                attempts@ for (attempt in 1..3) {
+                    for (t in targets) {
+                        try { sock.send(DatagramPacket(msg, msg.size, t, 8766)) }
+                        catch (e: Exception) {}
+                    }
+                    try {
+                        val resp = DatagramPacket(buf, buf.size)
+                        sock.receive(resp)
+                        val parts = String(resp.data, 0, resp.length).split("|")
+                        if (parts.isNotEmpty() && parts[0] == "CLAUDEPAD") {
+                            val ip = resp.address.hostAddress ?: ""
+                            found = true
+                            runOnUiThread {
+                                etIp.setText(ip)
+                                Haptics.heavy()
+                                tvStatus.text = "ketemu: ${parts.getOrNull(1) ?: ""} ($ip)"
+                            }
+                            break@attempts
+                        }
+                    } catch (e: Exception) { /* timeout percobaan ini, ulangi */ }
                 }
             } catch (e: Exception) {
-                runOnUiThread { tvStatus.text = "tidak ketemu — pastikan server jalan & satu jaringan" }
             } finally {
                 sock?.close()
+            }
+            if (!found) runOnUiThread {
+                tvStatus.text = "tidak ketemu — cek firewall pc (jalankan ulang " +
+                    "start_server.bat) & pastikan satu jaringan"
             }
         }.start()
     }

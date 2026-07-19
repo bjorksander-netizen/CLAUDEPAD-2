@@ -1,6 +1,5 @@
 package com.bjorn.claudepad
 
-import android.os.Build
 import android.os.Bundle
 import android.content.Intent
 import android.text.Editable
@@ -32,7 +31,7 @@ class ControlActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_control)
         Haptics.init(this)
-        applyBlur()
+        Glass.apply(this, findViewById(R.id.rootControl))
 
         if (Prefs.keepAwake(this)) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -57,20 +56,9 @@ class ControlActivity : AppCompatActivity() {
     }
 
     // ---------------------------------------------------------------- visual --
-    /** Blur wallpaper di belakang aplikasi (Android 12+). */
-    private fun applyBlur() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            try {
-                window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
-                window.attributes = window.attributes.apply { blurBehindRadius = 70 }
-            } catch (e: Exception) {
-                // perangkat tanpa cross-window blur: scrim gelap tetap jadi cadangan
-            }
-        }
-    }
-
-    /** Warna aksen mengikuti wallpaper (Material You). */
+    /** Warna aksen mengikuti wallpaper. */
     private fun applyAccent() {
+        Accent.refresh()
         Accent.applyToKey(findViewById(R.id.kEnter))
         Accent.applyToKey(findViewById(R.id.mPlay))
         findViewById<DpadView>(R.id.dpad).accentColor = Accent.bg(this)
@@ -140,9 +128,17 @@ class ControlActivity : AppCompatActivity() {
                 if (now.length > before.length && now.startsWith(before)) {
                     WsClient.text(now.substring(before.length))
                     Haptics.tick()
+                } else if (now.length < before.length && before.startsWith(now)) {
+                    repeat(before.length - now.length) { WsClient.key("backspace") }
+                    Haptics.tick()
+                } else if (now != before) {
+                    // perubahan kompleks (autocorrect): hapus lalu ketik ulang
+                    repeat(before.length) { WsClient.key("backspace") }
+                    if (now.isNotEmpty()) WsClient.text(now)
                 }
             }
         })
+        tap(R.id.kBksp, Haptics.Level.MEDIUM) { WsClient.key("backspace") }
         tap(R.id.kEnter, Haptics.Level.MEDIUM) {
             WsClient.key("enter")
             suppressWatcher = true
@@ -263,12 +259,19 @@ class ControlActivity : AppCompatActivity() {
             Haptics.light()
             startActivity(Intent(this, SettingsActivity::class.java))
         }
+        findViewById<TextView>(R.id.btnDisconnect).setOnClickListener {
+            Haptics.heavy()
+            WsClient.disconnect()
+            finish()
+        }
     }
 
     // ---------------------------------------------------------------- state --
     override fun onResume() {
         super.onResume()
         Haptics.enabled = Prefs.hapticEnabled(this)
+        Haptics.strength = Prefs.hapticStrength(this)
+        Glass.apply(this, findViewById(R.id.rootControl))
         trackpad.sensitivity = Prefs.sensitivity(this)
         trackpad.naturalScroll = Prefs.naturalScroll(this)
         trackpad.inputRotated = Prefs.inputRotated(this)

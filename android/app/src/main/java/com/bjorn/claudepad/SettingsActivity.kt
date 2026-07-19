@@ -15,6 +15,19 @@ class SettingsActivity : AppCompatActivity() {
         const val README_URL = "https://github.com/bjorksander-netizen/CLAUDEPAD#readme"
 
         val CHANGELOG = """
+            v2.2
+            • Perbaikan WiFi/Hotspot & cari otomatis: server kini membuka
+              firewall Windows otomatis; pencarian memakai broadcast
+              per-interface dengan 3 percobaan
+            • Blur background diperbaiki: blur asli (Android 12+) plus
+              lapisan frost yang bekerja di semua perangkat
+            • Warna aksen kini diambil dari WallpaperColors (Android 8.1+),
+              bukan hanya Material You
+            • Slider intensitas blur & slider kekuatan haptic di setting
+            • Fitur backspace dikembalikan (tombol ⌫ + hapus di kolom ketik)
+            • Kunci versi: koneksi ditolak bila versi APK ≠ versi server
+            • Tombol putuskan koneksi (⏻) di bar atas & di jendela server
+
             v2.1
             • Perbaikan fatal: trackpad hilang karena panel bawah
               melahap seluruh tinggi layar — tinggi baris bawah kini tetap
@@ -66,12 +79,7 @@ class SettingsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
         Haptics.init(this)
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-            try {
-                window.addFlags(android.view.WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
-                window.attributes = window.attributes.apply { blurBehindRadius = 70 }
-            } catch (e: Exception) { }
-        }
+        Glass.apply(this, findViewById(R.id.rootSettings))
 
         bindConnectionInfo()
         bindToggles()
@@ -162,6 +170,43 @@ class SettingsActivity : AppCompatActivity() {
             }
             override fun onStartTrackingTouch(sb: SeekBar?) {}
             override fun onStopTrackingTouch(sb: SeekBar?) { Haptics.light() }
+        })
+
+        // ---- blur background ----
+        val tvBlur = findViewById<TextView>(R.id.tvBlur)
+        val seekBlur = findViewById<SeekBar>(R.id.seekBlur)
+        seekBlur.progress = Prefs.blurIntensity(this)
+        tvBlur.text = "${seekBlur.progress}%"
+        seekBlur.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) {
+                tvBlur.text = "$p%"
+                if (fromUser) {
+                    Prefs.setBlurIntensity(this@SettingsActivity, p)
+                    // pratinjau langsung di halaman ini
+                    Glass.apply(this@SettingsActivity, findViewById(R.id.rootSettings))
+                }
+            }
+            override fun onStartTrackingTouch(sb: SeekBar?) {}
+            override fun onStopTrackingTouch(sb: SeekBar?) { Haptics.light() }
+        })
+
+        // ---- kekuatan haptic ----
+        val tvH = findViewById<TextView>(R.id.tvHapticStr)
+        val seekH = findViewById<SeekBar>(R.id.seekHaptic)
+        seekH.progress = (Prefs.hapticStrength(this) * 100).toInt().coerceIn(0, 200)
+        tvH.text = "${seekH.progress}%"
+        seekH.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) {
+                tvH.text = "$p%"
+                if (fromUser) {
+                    val str = p / 100f
+                    Prefs.setHapticStrength(this@SettingsActivity, str)
+                    Haptics.strength = str
+                    Haptics.medium()   // rasakan langsung kekuatannya
+                }
+            }
+            override fun onStartTrackingTouch(sb: SeekBar?) {}
+            override fun onStopTrackingTouch(sb: SeekBar?) {}
         })
     }
 

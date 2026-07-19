@@ -21,6 +21,9 @@ object Haptics {
 
     var enabled = true
 
+    /** Pengali kekuatan dari setting (0.0..2.0). */
+    var strength = 1.0f
+
     private var vib: Vibrator? = null
 
     fun init(ctx: Context) {
@@ -32,18 +35,21 @@ object Haptics {
             ctx.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
         }
         enabled = Prefs.hapticEnabled(ctx)
+        strength = Prefs.hapticStrength(ctx)
     }
 
     fun fire(level: Level) {
-        if (!enabled) return
+        if (!enabled || strength <= 0.05f) return
         val v = vib ?: return
         if (!v.hasVibrator()) return
+        val ms = (level.ms * strength).toLong().coerceIn(4L, 120L)
+        val amp = (level.amp * strength).toInt().coerceIn(1, 255)
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                v.vibrate(VibrationEffect.createOneShot(level.ms, level.amp))
+                v.vibrate(VibrationEffect.createOneShot(ms, amp))
             } else {
                 @Suppress("DEPRECATION")
-                v.vibrate(level.ms)
+                v.vibrate(ms)
             }
         } catch (e: Exception) {
             // perangkat tanpa vibrator / izin dicabut - abaikan

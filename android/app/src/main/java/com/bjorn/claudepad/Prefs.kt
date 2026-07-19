@@ -21,6 +21,14 @@ object Prefs {
     fun naturalScroll(ctx: Context) = sp(ctx).getBoolean("natscroll", false)
     fun setNaturalScroll(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("natscroll", v).apply()
 
+    /** Intensitas blur/frost background, 0..100. */
+    fun blurIntensity(ctx: Context) = sp(ctx).getInt("blur", 55)
+    fun setBlurIntensity(ctx: Context, v: Int) = sp(ctx).edit().putInt("blur", v).apply()
+
+    /** Kekuatan haptic, 0.0..2.0 (1.0 = normal, 0 = sama dengan mati). */
+    fun hapticStrength(ctx: Context) = sp(ctx).getFloat("haptic_str", 1.0f)
+    fun setHapticStrength(ctx: Context, v: Float) = sp(ctx).edit().putFloat("haptic_str", v).apply()
+
     fun keepAwake(ctx: Context) = sp(ctx).getBoolean("awake", true)
     fun setKeepAwake(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("awake", v).apply()
 

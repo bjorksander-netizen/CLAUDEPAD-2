@@ -33,12 +33,13 @@ object WsClient {
     var onState: ((Boolean, String) -> Unit)? = null
     var onMessage: ((JSONObject) -> Unit)? = null
 
-    fun connect(host: String, port: Int, pin: String) {
+    fun connect(host: String, port: Int, pin: String, appVersion: String) {
         disconnect()
         val req = Request.Builder().url("ws://$host:$port").build()
         ws = client.newWebSocket(req, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                webSocket.send(JSONObject().put("t", "auth").put("pin", pin).toString())
+                webSocket.send(JSONObject().put("t", "auth")
+                    .put("pin", pin).put("ver", appVersion).toString())
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -54,7 +55,11 @@ object WsClient {
                     }
                     "auth_fail" -> {
                         connected = false
-                        onState?.invoke(false, "pin salah")
+                        val msg = if (o.optString("reason") == "version") {
+                            "versi tidak cocok — server v" + o.optString("server", "?") +
+                                ", apk v" + o.optString("app", "?") + ". samakan dulu keduanya."
+                        } else "pin salah"
+                        onState?.invoke(false, msg)
                         webSocket.close(1000, null)
                     }
                     "vol" -> {
