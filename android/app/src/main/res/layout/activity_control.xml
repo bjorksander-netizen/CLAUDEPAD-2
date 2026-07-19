@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="8dp">
+
+    <TextView
+        android:id="@+id/tvStatus"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="..." />
+
+    <com.bjorn.claudepad.TrackpadView
+        android:id="@+id/trackpad"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="4dp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+        <Button android:id="@+id/btnLeft" android:layout_width="0dp" android:layout_weight="2"
+            android:layout_height="wrap_content" android:text="Klik Kiri" />
+        <Button android:id="@+id/btnMiddle" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:text="Tengah" />
+        <Button android:id="@+id/btnRight" android:layout_width="0dp" android:layout_weight="2"
+            android:layout_height="wrap_content" android:text="Klik Kanan" />
+    </LinearLayout>
+
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="none">
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+            <Button android:id="@+id/kEsc" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Esc" />
+            <Button android:id="@+id/kTab" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Tab" />
+            <Button android:id="@+id/kWin" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Win" />
+            <Button android:id="@+id/kAltTab" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Alt+Tab" />
+            <Button android:id="@+id/kCtrlC" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Ctrl+C" />
+            <Button android:id="@+id/kCtrlV" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Ctrl+V" />
+            <Button android:id="@+id/kCtrlZ" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Ctrl+Z" />
+            <Button android:id="@+id/kEnter" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Enter" />
+            <Button android:id="@+id/kBksp" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="⌫" />
+            <Button android:id="@+id/kDel" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Del" />
+            <Button android:id="@+id/kUp" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="↑" />
+            <Button android:id="@+id/kDown" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="↓" />
+            <Button android:id="@+id/kLeft" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="←" />
+            <Button android:id="@+id/kRight" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="→" />
+        </LinearLayout>
+    </HorizontalScrollView>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+        <EditText
+            android:id="@+id/etType"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:hint="Ketik di sini → langsung muncul di PC"
+            android:inputType="text"
+            android:importantForAutofill="no" />
+        <Button
+            android:id="@+id/btnEnterSend"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Enter" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+        <Button android:id="@+id/btnClipToPc" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:text="Clipboard HP → PC" />
+        <Button android:id="@+id/btnClipToHp" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:text="Clipboard PC → HP" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+        <Button android:id="@+id/mPrev" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:text="⏮" />
+        <Button android:id="@+id/mPlay" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:text="⏯" />
+        <Button android:id="@+id/mNext" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:text="⏭" />
+        <Button android:id="@+id/mVolDown" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:text="🔉" />
+        <Button android:id="@+id/mMute" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:text="🔇" />
+        <Button android:id="@+id/mVolUp" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:text="🔊" />
+    </LinearLayout>
+</LinearLayout>

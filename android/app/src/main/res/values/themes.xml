@@ -1,0 +1,6 @@
+<resources>
+    <style name="Theme.ClaudePad" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="colorPrimary">#3D5AFE</item>
+        <item name="colorAccent">#3D5AFE</item>
+    </style>
+</resources>
