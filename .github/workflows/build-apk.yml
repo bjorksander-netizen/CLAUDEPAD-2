@@ -129,6 +129,15 @@ jobs:
           echo "version=$V" >> "$GITHUB_OUTPUT"
           echo "Versi aplikasi: $V"
 
+      - name: Unduh JetBrains Mono
+        continue-on-error: true
+        run: |
+          mkdir -p android/app/src/main/res/font
+          curl -fsSL --retry 3 -o android/app/src/main/res/font/jetbrains_mono.ttf \
+            "https://raw.githubusercontent.com/JetBrains/JetBrainsMono/v2.304/fonts/ttf/JetBrainsMono-Regular.ttf" \
+            && echo "Font berhasil diunduh" \
+            || echo "Font gagal diunduh - aplikasi akan memakai monospace bawaan"
+
       - name: Build debug APK
         working-directory: android
         run: gradle assembleDebug --no-daemon --stacktrace
