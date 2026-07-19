@@ -5,6 +5,7 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
@@ -20,14 +21,21 @@ object WsClient {
     @Volatile var connected = false
         private set
 
-    /** true = terhubung & terautentikasi, false = putus/gagal (dengan pesan) */
+    // Info dari server, dipakai di trackpad & halaman setting
+    @Volatile var hostName: String = "—"
+        private set
+    @Volatile var transport: String = "—"
+        private set
+    @Volatile var serverVersion: String = "—"
+        private set
+    @Volatile var volume: Int = 50
+
     var onState: ((Boolean, String) -> Unit)? = null
-    /** pesan JSON lain dari server (mis. clipboard) */
     var onMessage: ((JSONObject) -> Unit)? = null
 
     fun connect(host: String, port: Int, pin: String) {
         disconnect()
-        val req = Request.Builder().url("ws://" + host + ":" + port).build()
+        val req = Request.Builder().url("ws://$host:$port").build()
         ws = client.newWebSocket(req, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 webSocket.send(JSONObject().put("t", "auth").put("pin", pin).toString())
@@ -36,11 +44,22 @@ object WsClient {
             override fun onMessage(webSocket: WebSocket, text: String) {
                 val o = try { JSONObject(text) } catch (e: Exception) { return }
                 when (o.optString("t")) {
-                    "auth_ok" -> { connected = true; onState?.invoke(true, "Terhubung") }
+                    "auth_ok" -> {
+                        connected = true
+                        hostName = o.optString("host", "PC")
+                        transport = o.optString("transport", "wifi")
+                        serverVersion = o.optString("version", "—")
+                        if (!o.isNull("vol")) volume = o.optInt("vol", 50)
+                        onState?.invoke(true, "terhubung")
+                    }
                     "auth_fail" -> {
                         connected = false
-                        onState?.invoke(false, "PIN salah")
+                        onState?.invoke(false, "pin salah")
                         webSocket.close(1000, null)
+                    }
+                    "vol" -> {
+                        if (!o.isNull("v")) volume = o.optInt("v", volume)
+                        onMessage?.invoke(o)
                     }
                     else -> onMessage?.invoke(o)
                 }
@@ -48,12 +67,12 @@ object WsClient {
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 connected = false
-                onState?.invoke(false, "Gagal: " + (t.message ?: "tidak diketahui"))
+                onState?.invoke(false, t.message ?: "koneksi gagal")
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 connected = false
-                onState?.invoke(false, "Terputus")
+                onState?.invoke(false, "terputus")
             }
         })
     }
@@ -64,12 +83,10 @@ object WsClient {
         ws = null
     }
 
-    fun send(o: JSONObject) { ws?.send(o.toString()) }
+    private fun send(o: JSONObject) { ws?.send(o.toString()) }
+    private fun send(t: String) = send(JSONObject().put("t", t))
 
-    fun send(t: String) = send(JSONObject().put("t", t))
-
-    fun move(dx: Int, dy: Int) =
-        send(JSONObject().put("t", "move").put("dx", dx).put("dy", dy))
+    fun move(dx: Int, dy: Int) = send(JSONObject().put("t", "move").put("dx", dx).put("dy", dy))
 
     fun click(b: String, double: Boolean = false) =
         send(JSONObject().put("t", "click").put("b", b).put("double", double))
@@ -78,17 +95,19 @@ object WsClient {
     fun buttonUp(b: String) = send(JSONObject().put("t", "up").put("b", b))
 
     fun scroll(dy: Int) = send(JSONObject().put("t", "scroll").put("dy", dy))
+    fun zoom(dir: Int) = send(JSONObject().put("t", "zoom").put("dir", dir))
+    fun gesture(g: String) = send(JSONObject().put("t", "gesture").put("g", g))
 
     fun text(s: String) = send(JSONObject().put("t", "text").put("s", s))
 
     fun key(k: String, mods: List<String> = emptyList()) {
         val o = JSONObject().put("t", "key").put("k", k)
-        if (mods.isNotEmpty()) o.put("mods", org.json.JSONArray(mods))
+        if (mods.isNotEmpty()) o.put("mods", JSONArray(mods))
         send(o)
     }
 
     fun media(a: String) = send(JSONObject().put("t", "media").put("a", a))
 
-    fun clipSet(s: String) = send(JSONObject().put("t", "clipset").put("s", s))
-    fun clipGet() = send("clipget")
+    fun volSet(v: Int) = send(JSONObject().put("t", "volset").put("v", v))
+    fun volGet() = send("volget")
 }

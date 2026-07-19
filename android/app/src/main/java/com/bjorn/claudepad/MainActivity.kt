@@ -2,7 +2,6 @@ package com.bjorn.claudepad
 
 import android.content.Intent
 import android.os.Bundle
-import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
@@ -20,51 +19,78 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        Haptics.init(this)
 
         etIp = findViewById(R.id.etIp)
         etPin = findViewById(R.id.etPin)
         tvStatus = findViewById(R.id.tvStatus)
 
-        val prefs = getSharedPreferences("claudepad", MODE_PRIVATE)
-        etIp.setText(prefs.getString("ip", ""))
-        etPin.setText(prefs.getString("pin", ""))
+        etIp.setText(Prefs.ip(this))
+        etPin.setText(Prefs.pin(this))
 
-        findViewById<Button>(R.id.btnConnect).setOnClickListener {
+        findViewById<TextView>(R.id.btnConnect).setOnClickListener {
+            Haptics.medium()
             connect(etIp.text.toString().trim())
         }
-        findViewById<Button>(R.id.btnUsb).setOnClickListener {
+        findViewById<TextView>(R.id.btnUsb).setOnClickListener {
             // Mode USB: PC menjalankan "adb reverse tcp:8765 tcp:8765",
-            // sehingga server terlihat di 127.0.0.1 dari sisi HP.
+            // jadi server terlihat di 127.0.0.1 dari sisi HP.
+            Haptics.medium()
             connect("127.0.0.1")
         }
-        findViewById<Button>(R.id.btnScan).setOnClickListener { scan() }
+        findViewById<TextView>(R.id.btnScan).setOnClickListener {
+            Haptics.medium()
+            scan()
+        }
+        findViewById<TextView>(R.id.btnSettings).setOnClickListener {
+            Haptics.light()
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }
+
+        Fonts.apply(findViewById(R.id.rootMain))
+    }
+
+    override fun onResume() {
+        super.onResume()
+        Haptics.enabled = Prefs.hapticEnabled(this)
+        // Ambil alih kembali callback dari ControlActivity supaya status
+        // koneksi tetap tampil di halaman ini.
+        WsClient.onState = { ok, msg ->
+            runOnUiThread { tvStatus.text = msg }
+        }
+        WsClient.onMessage = null
     }
 
     private fun connect(host: String) {
         if (host.isEmpty()) {
-            toast("Isi alamat IP PC dulu, atau tekan Cari Otomatis")
+            toast("isi alamat ip dulu, atau tekan cari otomatis")
             return
         }
         val pin = etPin.text.toString().trim()
-        getSharedPreferences("claudepad", MODE_PRIVATE).edit()
-            .putString("ip", etIp.text.toString().trim())
-            .putString("pin", pin).apply()
+        Prefs.setIp(this, etIp.text.toString().trim())
+        Prefs.setPin(this, pin)
 
-        tvStatus.text = "Menghubungkan ke " + host + "..."
+        tvStatus.text = "menghubungkan ke $host…"
         WsClient.onState = { ok, msg ->
             runOnUiThread {
                 tvStatus.text = msg
-                if (ok) startActivity(Intent(this, ControlActivity::class.java))
+                if (ok) {
+                    Haptics.heavy()
+                    startActivity(Intent(this, ControlActivity::class.java))
+                } else {
+                    Haptics.light()
+                }
             }
         }
         WsClient.connect(host, 8765, pin)
     }
 
     private fun scan() {
-        tvStatus.text = "Mencari PC di jaringan..."
+        tvStatus.text = "mencari pc di jaringan…"
         Thread {
+            var sock: DatagramSocket? = null
             try {
-                val sock = DatagramSocket()
+                sock = DatagramSocket()
                 sock.broadcast = true
                 sock.soTimeout = 2500
                 val msg = "DISCOVER_CLAUDEPAD".toByteArray()
@@ -73,17 +99,19 @@ class MainActivity : AppCompatActivity() {
                 val buf = ByteArray(256)
                 val resp = DatagramPacket(buf, buf.size)
                 sock.receive(resp)
-                sock.close()
                 val parts = String(resp.data, 0, resp.length).split("|")
                 if (parts.isNotEmpty() && parts[0] == "CLAUDEPAD") {
                     val ip = resp.address.hostAddress ?: ""
                     runOnUiThread {
                         etIp.setText(ip)
-                        tvStatus.text = "Ketemu: " + (parts.getOrNull(1) ?: "") + " (" + ip + ")"
+                        Haptics.heavy()
+                        tvStatus.text = "ketemu: ${parts.getOrNull(1) ?: ""} ($ip)"
                     }
                 }
             } catch (e: Exception) {
-                runOnUiThread { tvStatus.text = "Tidak ketemu. Pastikan server jalan & satu jaringan." }
+                runOnUiThread { tvStatus.text = "tidak ketemu — pastikan server jalan & satu jaringan" }
+            } finally {
+                sock?.close()
             }
         }.start()
     }
