@@ -21,7 +21,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependency server
-        run: pip install websockets
+        run: pip install "websockets>=12.0,<14.0"
 
       - name: Uji dispatch protokol
         working-directory: server
@@ -62,19 +62,19 @@ jobs:
               srv.start_server_thread()
               await asyncio.sleep(1.0)
 
-              async with websockets.connect("ws://127.0.0.1:8765") as ws:
+              async with websockets.connect("ws://127.0.0.1:8765/ws") as ws:
                   bad = "0000" if core.PIN != "0000" else "1111"
                   await ws.send(json.dumps({"t":"auth","pin":bad,"ver":srv.APP_VERSION}))
                   assert json.loads(await ws.recv())["t"] == "auth_fail"
               print("OK - PIN salah ditolak")
 
-              async with websockets.connect("ws://127.0.0.1:8765") as ws:
+              async with websockets.connect("ws://127.0.0.1:8765/ws") as ws:
                   await ws.send(json.dumps({"t":"auth","pin":core.PIN,"ver":"9.9"}))
                   r = json.loads(await ws.recv())
                   assert r["t"] == "auth_fail" and r.get("reason") == "version"
               print("OK - versi APK beda ditolak")
 
-              async with websockets.connect("ws://127.0.0.1:8765") as ws:
+              async with websockets.connect("ws://127.0.0.1:8765/ws") as ws:
                   await ws.send(json.dumps({"t":"auth","pin":core.PIN,"ver":srv.APP_VERSION}))
                   r = json.loads(await ws.recv())
                   assert r["t"] == "auth_ok" and r["host"] == core.HOSTNAME
@@ -105,6 +105,19 @@ jobs:
               data, _ = s.recvfrom(256); s.close()
               assert data.decode().split("|")[0] == "CLAUDEPAD"
               print("OK - discovery UDP:", data.decode())
+
+              # health endpoint HTTP (dipakai pengguna untuk tes lewat browser HP)
+              import urllib.request
+              body = urllib.request.urlopen("http://127.0.0.1:8765/", timeout=5).read().decode()
+              assert "CLAUDEPAD OK" in body and srv.APP_VERSION in body
+              print("OK - health HTTP di port 8765")
+
+              # penyaringan adapter virtual (akar bug koneksi WiFi v2.3)
+              assert core._score("172.25.224.1", "unknown") >= 90
+              assert core._score("192.168.43.12", "Wi-Fi") == 0
+              assert core._is_virtual("vEthernet (WSL)")
+              assert not core._is_virtual("Wireless LAN adapter Wi-Fi")
+              print("OK - filter adapter virtual")
 
           asyncio.run(main())
           PY
