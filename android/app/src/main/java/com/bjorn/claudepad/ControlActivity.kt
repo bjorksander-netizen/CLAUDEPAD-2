@@ -1,14 +1,17 @@
 package com.bjorn.claudepad
 
-import android.content.Intent
-import android.content.pm.ActivityInfo
+import android.os.Build
 import android.os.Bundle
+import android.content.Intent
 import android.text.Editable
 import android.text.TextWatcher
+import android.view.LayoutInflater
 import android.view.View
 import android.view.WindowManager
 import android.widget.EditText
+import android.widget.PopupWindow
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 
 class ControlActivity : AppCompatActivity() {
@@ -17,13 +20,19 @@ class ControlActivity : AppCompatActivity() {
     private lateinit var trackpad: TrackpadView
     private lateinit var volumeSlider: VolumeSlider
     private var suppressWatcher = false
-    private var advanceOpen = false
+    private var advancePopup: PopupWindow? = null
+
+    // fallback volume: kalau server tidak punya pycaw, pakai tombol media
+    private var absVolume = true
+    private var volErrToasted = false
+    private var lastVolSent = -1
+    private var lastVolTime = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        applyOrientation()
         setContentView(R.layout.activity_control)
         Haptics.init(this)
+        applyBlur()
 
         if (Prefs.keepAwake(this)) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -38,23 +47,36 @@ class ControlActivity : AppCompatActivity() {
         setupMouseButtons()
         setupKeyboard()
         setupShortcuts()
-        setupAdvancePanel()
         setupVolume()
         setupMedia()
         setupDpad()
         setupTopBar()
+        applyAccent()
 
         Fonts.apply(findViewById(R.id.rootControl))
     }
 
-    // ---------------------------------------------------------------- setup --
-    private fun applyOrientation() {
-        requestedOrientation = if (Prefs.landscape(this))
-            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-        else
-            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+    // ---------------------------------------------------------------- visual --
+    /** Blur wallpaper di belakang aplikasi (Android 12+). */
+    private fun applyBlur() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try {
+                window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+                window.attributes = window.attributes.apply { blurBehindRadius = 70 }
+            } catch (e: Exception) {
+                // perangkat tanpa cross-window blur: scrim gelap tetap jadi cadangan
+            }
+        }
     }
 
+    /** Warna aksen mengikuti wallpaper (Material You). */
+    private fun applyAccent() {
+        Accent.applyToKey(findViewById(R.id.kEnter))
+        Accent.applyToKey(findViewById(R.id.mPlay))
+        findViewById<DpadView>(R.id.dpad).accentColor = Accent.bg(this)
+    }
+
+    // ---------------------------------------------------------------- setup --
     private fun setupConnectionCallbacks() {
         WsClient.onState = { ok, msg ->
             runOnUiThread {
@@ -63,8 +85,11 @@ class ControlActivity : AppCompatActivity() {
             }
         }
         WsClient.onMessage = { o ->
-            if (o.optString("t") == "vol" && !o.isNull("v")) {
-                runOnUiThread { volumeSlider.value = o.optInt("v", volumeSlider.value) }
+            when (o.optString("t")) {
+                "vol" -> if (!o.isNull("v")) {
+                    runOnUiThread { volumeSlider.value = o.optInt("v", volumeSlider.value) }
+                }
+                "volerr" -> runOnUiThread { onVolumeError() }
             }
         }
         val host = WsClient.hostName
@@ -75,6 +100,7 @@ class ControlActivity : AppCompatActivity() {
     private fun setupTrackpad() {
         trackpad.sensitivity = Prefs.sensitivity(this)
         trackpad.naturalScroll = Prefs.naturalScroll(this)
+        trackpad.inputRotated = Prefs.inputRotated(this)
         trackpad.listener = object : TrackpadView.Listener {
             override fun onMove(dx: Int, dy: Int) = WsClient.move(dx, dy)
             override fun onLeftClick() = WsClient.click("left")
@@ -111,15 +137,12 @@ class ControlActivity : AppCompatActivity() {
             override fun afterTextChanged(s: Editable) {
                 if (suppressWatcher) return
                 val now = s.toString()
-                // Hanya penambahan teks yang dikirim; penghapusan diabaikan
-                // (fitur backspace dihapus sesuai permintaan).
                 if (now.length > before.length && now.startsWith(before)) {
                     WsClient.text(now.substring(before.length))
                     Haptics.tick()
                 }
             }
         })
-
         tap(R.id.kEnter, Haptics.Level.MEDIUM) {
             WsClient.key("enter")
             suppressWatcher = true
@@ -133,45 +156,82 @@ class ControlActivity : AppCompatActivity() {
         tap(R.id.kPaste, Haptics.Level.MEDIUM) { WsClient.key("v", listOf("ctrl")) }
         tap(R.id.kUndo, Haptics.Level.MEDIUM) { WsClient.key("z", listOf("ctrl")) }
         tap(R.id.kWinTab, Haptics.Level.MEDIUM) { WsClient.key("tab", listOf("win")) }
-    }
-
-    private fun setupAdvancePanel() {
-        val panel = findViewById<View>(R.id.advancePanel)
-        val btn = findViewById<TextView>(R.id.btnAdvance)
-        btn.setOnClickListener {
+        findViewById<TextView>(R.id.btnAdvance).setOnClickListener {
             Haptics.medium()
-            advanceOpen = !advanceOpen
-            panel.visibility = if (advanceOpen) View.VISIBLE else View.GONE
-            btn.text = if (advanceOpen) "⋮" else "⋯"
+            toggleAdvancePopup(it)
         }
-        tap(R.id.kEsc, Haptics.Level.MEDIUM) { WsClient.key("esc") }
-        tap(R.id.kTab, Haptics.Level.MEDIUM) { WsClient.key("tab") }
-        tap(R.id.kWin, Haptics.Level.MEDIUM) { WsClient.key("win") }
-        tap(R.id.kDel, Haptics.Level.MEDIUM) { WsClient.key("delete") }
     }
 
-    private var lastVolSent = -1
-    private var lastVolTime = 0L
+    /** Panel Advance: pop-up persegi berisi esc / tab / win / del. */
+    private fun toggleAdvancePopup(anchor: View) {
+        advancePopup?.let {
+            if (it.isShowing) { it.dismiss(); advancePopup = null; return }
+        }
+        val content = LayoutInflater.from(this).inflate(R.layout.popup_advance, null)
+        Fonts.apply(content)
+        val popup = PopupWindow(content,
+            (200 * resources.displayMetrics.density).toInt(),
+            (200 * resources.displayMetrics.density).toInt(),
+            true)
+        popup.elevation = 24f
+        fun bind(id: Int, action: () -> Unit) {
+            content.findViewById<View>(id).setOnClickListener {
+                Haptics.medium(); action()
+            }
+        }
+        bind(R.id.kEsc) { WsClient.key("esc") }
+        bind(R.id.kTab) { WsClient.key("tab") }
+        bind(R.id.kWin) { WsClient.key("win") }
+        bind(R.id.kDel) { WsClient.key("delete") }
+        popup.setOnDismissListener { advancePopup = null }
+        popup.showAsDropDown(anchor, 0,
+            (-260 * resources.displayMetrics.density).toInt())
+        advancePopup = popup
+    }
 
+    // ---------------------------------------------------------------- volume --
     private fun setupVolume() {
         volumeSlider.value = WsClient.volume
-        // Throttle: hindari membanjiri server saat slider digeser cepat.
         volumeSlider.onValueChanged = { v ->
             val now = System.currentTimeMillis()
             if (v != lastVolSent && now - lastVolTime >= 40L) {
-                lastVolSent = v
-                lastVolTime = now
-                WsClient.volSet(v)
+                sendVolume(v)
             }
         }
         volumeSlider.onCommit = { v ->
             WsClient.volume = v
-            if (v != lastVolSent) {          // pastikan nilai akhir selalu terkirim
-                lastVolSent = v
-                WsClient.volSet(v)
-            }
+            if (v != lastVolSent) sendVolume(v)
         }
         WsClient.volGet()
+    }
+
+    private fun sendVolume(v: Int) {
+        if (absVolume) {
+            lastVolSent = v
+            lastVolTime = System.currentTimeMillis()
+            WsClient.volSet(v)
+        } else {
+            // fallback: kirim langkah volup/voldown (±2% per langkah)
+            val prev = if (lastVolSent < 0) volumeSlider.value else lastVolSent
+            val steps = (v - prev) / 2
+            if (steps != 0) {
+                repeat(kotlin.math.abs(steps)) {
+                    WsClient.media(if (steps > 0) "volup" else "voldown")
+                }
+                lastVolSent = prev + steps * 2
+                lastVolTime = System.currentTimeMillis()
+            }
+        }
+    }
+
+    private fun onVolumeError() {
+        absVolume = false
+        if (!volErrToasted) {
+            volErrToasted = true
+            Toast.makeText(this,
+                "server tanpa pycaw — slider memakai mode bertingkat",
+                Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun setupMedia() {
@@ -186,11 +246,18 @@ class ControlActivity : AppCompatActivity() {
     }
 
     private fun setupTopBar() {
-        findViewById<TextView>(R.id.btnRotate).setOnClickListener {
+        val btnRotate = findViewById<TextView>(R.id.btnRotate)
+        fun renderRotate() {
+            btnRotate.alpha = if (trackpad.inputRotated) 1f else 0.6f
+        }
+        renderRotate()
+        btnRotate.setOnClickListener {
             Haptics.heavy()
-            val next = !Prefs.landscape(this)
-            Prefs.setLandscape(this, next)
-            applyOrientation()
+            // Hanya arah INPUT trackpad yang berputar — layout tidak berubah.
+            val next = !trackpad.inputRotated
+            trackpad.inputRotated = next
+            Prefs.setInputRotated(this, next)
+            renderRotate()
         }
         findViewById<TextView>(R.id.btnSettings).setOnClickListener {
             Haptics.light()
@@ -201,16 +268,16 @@ class ControlActivity : AppCompatActivity() {
     // ---------------------------------------------------------------- state --
     override fun onResume() {
         super.onResume()
-        // setting bisa berubah dari halaman Setting
         Haptics.enabled = Prefs.hapticEnabled(this)
         trackpad.sensitivity = Prefs.sensitivity(this)
         trackpad.naturalScroll = Prefs.naturalScroll(this)
-        applyOrientation()
+        trackpad.inputRotated = Prefs.inputRotated(this)
         if (!WsClient.connected) finish()
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        advancePopup?.dismiss()
         if (isFinishing && !isChangingConfigurations) WsClient.disconnect()
     }
 }

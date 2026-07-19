@@ -11,8 +11,9 @@ object Prefs {
     fun hapticEnabled(ctx: Context) = sp(ctx).getBoolean("haptic", true)
     fun setHaptic(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("haptic", v).apply()
 
-    fun landscape(ctx: Context) = sp(ctx).getBoolean("landscape", false)
-    fun setLandscape(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("landscape", v).apply()
+    /** Rotasi input trackpad 90° (layout tidak berubah). */
+    fun inputRotated(ctx: Context) = sp(ctx).getBoolean("input_rotated", false)
+    fun setInputRotated(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("input_rotated", v).apply()
 
     fun sensitivity(ctx: Context) = sp(ctx).getFloat("sens", 1.4f)
     fun setSensitivity(ctx: Context, v: Float) = sp(ctx).edit().putFloat("sens", v).apply()

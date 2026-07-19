@@ -15,6 +15,18 @@ class SettingsActivity : AppCompatActivity() {
         const val README_URL = "https://github.com/bjorksander-netizen/CLAUDEPAD#readme"
 
         val CHANGELOG = """
+            v2.1
+            • Perbaikan fatal: trackpad hilang karena panel bawah
+              melahap seluruh tinggi layar — tinggi baris bawah kini tetap
+            • Panel D-Pad disamakan ukurannya dengan panel media
+            • Slider volume diperbaiki (inisialisasi COM audio di server)
+              plus mode cadangan bila server tanpa pycaw
+            • Menu Advance kini pop-up persegi, bukan baris dropdown
+            • Wallpaper di belakang aplikasi kini diblur (Android 12+)
+            • Fitur orientasi diluruskan: hanya arah INPUT trackpad yang
+              berputar 90°, layout tidak berubah sama sekali
+            • Warna aksen mengikuti wallpaper perangkat (Material You)
+
             v2.0
             • Tema baru bergaya Control Center: panel kaca tembus pandang
               yang memperlihatkan wallpaper HP
@@ -54,6 +66,12 @@ class SettingsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
         Haptics.init(this)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            try {
+                window.addFlags(android.view.WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+                window.attributes = window.attributes.apply { blurBehindRadius = 70 }
+            } catch (e: Exception) { }
+        }
 
         bindConnectionInfo()
         bindToggles()
@@ -119,9 +137,9 @@ class SettingsActivity : AppCompatActivity() {
             { v -> Prefs.setKeepAwake(this, v) })
 
         toggleRow(R.id.rowOrientation, R.id.tvOrientation,
-            { Prefs.landscape(this) },
-            { v -> Prefs.setLandscape(this, v) },
-            onText = "horizontal", offText = "vertikal")
+            { Prefs.inputRotated(this) },
+            { v -> Prefs.setInputRotated(this, v) },
+            onText = "diputar 90°", offText = "normal")
     }
 
     private fun bindSensitivity() {

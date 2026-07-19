@@ -28,6 +28,11 @@ class DpadView @JvmOverloads constructor(
     private val pressPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#997C6CFF")
     }
+
+    /** Warna sorot arah, di-set dari Accent (mengikuti wallpaper). */
+    var accentColor: Int
+        get() = pressPaint.color
+        set(value) { pressPaint.color = value; invalidate() }
     private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = 2f

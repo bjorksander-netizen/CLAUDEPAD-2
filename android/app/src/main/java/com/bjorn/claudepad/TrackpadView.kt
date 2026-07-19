@@ -42,6 +42,18 @@ class TrackpadView @JvmOverloads constructor(
     var sensitivity = 1.4f
     var naturalScroll = false
 
+    /**
+     * Rotasi INPUT trackpad (fitur orientasi): layout tidak berubah sama sekali,
+     * hanya arah input yang diputar 90°. Saat aktif, swipe ke kanan
+     * menggerakkan kursor ke ATAS, dst.
+     */
+    var inputRotated = false
+        set(value) { field = value; invalidate() }
+
+    /** (dx,dy) layar -> (dx,dy) kursor sesuai mode rotasi. */
+    private fun tx(dx: Float, dy: Float): Pair<Float, Float> =
+        if (inputRotated) Pair(dy, -dx) else Pair(dx, dy)
+
     /** Nama PC yang tampil di tengah trackpad. */
     var deviceName: String = "—"
         set(value) { field = value; invalidate() }
@@ -105,6 +117,11 @@ class TrackpadView @JvmOverloads constructor(
         namePaint.textSize = 15f * resources.displayMetrics.density
         hintPaint.textSize = 10f * resources.displayMetrics.density
         canvas.drawText(deviceName, width / 2f, height / 2f, namePaint)
+        if (inputRotated) {
+            hintPaint.textSize = 11f * resources.displayMetrics.density
+            canvas.drawText("⤢ input diputar 90°", width / 2f,
+                34f * resources.displayMetrics.density, hintPaint)
+        }
         canvas.drawText("1 jari gerak · 2 jari scroll/zoom · 3 jari gesture",
             width / 2f, height / 2f + 22f * resources.displayMetrics.density, hintPaint)
     }
@@ -155,8 +172,7 @@ class TrackpadView @JvmOverloads constructor(
                     // ---- 3 jari: gesture sistem ----
                     e.pointerCount >= 3 -> {
                         if (!threeFingerFired) {
-                            val gx = x - threeStartX
-                            val gy = y - threeStartY
+                            val (gx, gy) = tx(x - threeStartX, y - threeStartY)
                             if (abs(gx) > threeSwipeMin || abs(gy) > threeSwipeMin) {
                                 val g = if (abs(gx) > abs(gy)) {
                                     if (gx > 0) "appnext" else "appprev"
@@ -186,7 +202,7 @@ class TrackpadView @JvmOverloads constructor(
                                 Haptics.tick(); listener?.onZoom(-1); pinchAccum += pinchStep
                             }
                         } else {
-                            scrollAccum += dy
+                            scrollAccum += if (inputRotated) -dx else dy
                             val dir = if (naturalScroll) -1 else 1
                             while (scrollAccum >= scrollStep) {
                                 Haptics.tick(); listener?.onScroll(120 * dir); scrollAccum -= scrollStep
@@ -199,7 +215,8 @@ class TrackpadView @JvmOverloads constructor(
 
                     // ---- 1 jari: gerakkan kursor ----
                     moved || dragging -> {
-                        listener?.onMove((dx * sensitivity).toInt(), (dy * sensitivity).toInt())
+                        val (mx, my) = tx(dx, dy)
+                        listener?.onMove((mx * sensitivity).toInt(), (my * sensitivity).toInt())
                     }
                 }
                 lastX = x; lastY = y

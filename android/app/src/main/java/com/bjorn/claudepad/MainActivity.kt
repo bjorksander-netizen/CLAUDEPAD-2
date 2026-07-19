@@ -20,6 +20,13 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         Haptics.init(this)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            try {
+                window.addFlags(android.view.WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+                window.attributes = window.attributes.apply { blurBehindRadius = 70 }
+            } catch (e: Exception) { }
+        }
+        Accent.applyToKey(findViewById(R.id.btnConnect))
 
         etIp = findViewById(R.id.etIp)
         etPin = findViewById(R.id.etPin)
