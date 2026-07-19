@@ -3,11 +3,101 @@ name: Build APK
 on:
   push:
     branches: [ main ]
-    paths: [ "android/**", ".github/workflows/build-apk.yml" ]
+    paths:
+      - "android/**"
+      - "server/**"
+      - ".github/workflows/build-apk.yml"
   workflow_dispatch:
 
 jobs:
+  # Verifikasi protokol server sebelum APK dibangun.
+  verify-server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependency server
+        run: pip install websockets
+
+      - name: Uji dispatch protokol
+        working-directory: server
+        run: |
+          python - <<'PY'
+          import input_core as core
+          sent = []
+          msgs = [
+              {"t":"move","dx":5,"dy":-3}, {"t":"click","b":"left"},
+              {"t":"click","b":"right","double":True},
+              {"t":"down","b":"left"}, {"t":"up","b":"left"},
+              {"t":"scroll","dy":120}, {"t":"zoom","dir":1}, {"t":"zoom","dir":-1},
+              {"t":"gesture","g":"taskview"}, {"t":"gesture","g":"showdesktop"},
+              {"t":"gesture","g":"appnext"}, {"t":"gesture","g":"appprev"},
+              {"t":"gesture","g":"bogus"}, {"t":"text","s":"halo"},
+              {"t":"key","k":"enter"}, {"t":"key","k":"tab","mods":["win"]},
+              {"t":"key","k":"c","mods":["ctrl"]}, {"t":"key","k":"up"},
+              {"t":"media","a":"playpause"}, {"t":"media","a":"bogus"},
+              {"t":"volget"}, {"t":"volset","v":73}, {"t":"volset","v":999},
+              {"t":"ping"}, {"t":"unknown"}, {},
+          ]
+          for m in msgs:
+              core.handle_message(m, sent.append)
+          assert len(core.new_pin()) == 4
+          assert core.VK["win"] == 0x5B and "d" in core.VK
+          print(f"OK - {len(msgs)} varian pesan diproses tanpa crash")
+          PY
+
+      - name: Uji end-to-end WebSocket
+        working-directory: server
+        run: |
+          python - <<'PY'
+          import asyncio, json, sys, socket
+          sys.argv = ["x", "--nogui"]
+          import pc_server as srv, input_core as core, websockets
+
+          async def main():
+              srv.start_server_thread()
+              await asyncio.sleep(1.0)
+
+              async with websockets.connect("ws://127.0.0.1:8765") as ws:
+                  bad = "0000" if core.PIN != "0000" else "1111"
+                  await ws.send(json.dumps({"t":"auth","pin":bad}))
+                  assert json.loads(await ws.recv())["t"] == "auth_fail"
+              print("OK - PIN salah ditolak")
+
+              async with websockets.connect("ws://127.0.0.1:8765") as ws:
+                  await ws.send(json.dumps({"t":"auth","pin":core.PIN}))
+                  r = json.loads(await ws.recv())
+                  assert r["t"] == "auth_ok" and r["host"] == core.HOSTNAME
+                  assert r["version"] == srv.APP_VERSION
+                  print("OK - auth_ok membawa metadata")
+
+                  for m in [{"t":"move","dx":3,"dy":3}, {"t":"gesture","g":"taskview"},
+                            {"t":"key","k":"tab","mods":["win"]}, {"t":"volset","v":50}]:
+                      await ws.send(json.dumps(m))
+                  await ws.send("{json rusak")
+                  await ws.send(json.dumps({"t":"ping"}))
+                  assert json.loads(await ws.recv())["t"] == "pong"
+                  print("OK - pesan kontrol & JSON rusak ditangani")
+
+              await asyncio.sleep(0.4)
+              assert len(core.CLIENTS) == 0
+              print("OK - registry klien dibersihkan")
+
+              s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.settimeout(3)
+              s.sendto(b"DISCOVER_CLAUDEPAD", ("127.0.0.1", 8766))
+              data, _ = s.recvfrom(256); s.close()
+              assert data.decode().split("|")[0] == "CLAUDEPAD"
+              print("OK - discovery UDP:", data.decode())
+
+          asyncio.run(main())
+          PY
+
   build:
+    needs: verify-server
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -25,25 +115,44 @@ jobs:
         with:
           gradle-version: "8.4"
 
+      - name: Baca versi aplikasi
+        id: ver
+        run: |
+          V=$(grep -oP 'versionName\s*=\s*"\K[^"]+' android/app/build.gradle.kts)
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "Versi aplikasi: $V"
+
       - name: Build debug APK
         working-directory: android
-        run: gradle assembleDebug --no-daemon
+        run: gradle assembleDebug --no-daemon --stacktrace
 
-      - name: Rename APK
+      - name: Konfirmasi font ter-bundle
+        run: |
+          if [ -f android/app/src/main/res/font/jetbrains_mono.ttf ]; then
+            echo "JetBrains Mono ter-bundle"
+          else
+            echo "Font tidak terunduh - aplikasi memakai monospace bawaan"
+          fi
+
+      - name: Siapkan artefak
         run: cp android/app/build/outputs/apk/debug/app-debug.apk CLAUDEPAD.apk
 
-      - name: Upload APK artifact
+      - name: Upload artefak
         uses: actions/upload-artifact@v4
         with:
-          name: CLAUDEPAD-apk
+          name: CLAUDEPAD-v${{ steps.ver.outputs.version }}
           path: CLAUDEPAD.apk
 
-      - name: Release (latest)
+      - name: Publikasi release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: "CLAUDEPAD APK (latest build)"
+          name: "CLAUDEPAD v${{ steps.ver.outputs.version }}"
+          body: |
+            APK build otomatis dari commit ${{ github.sha }}.
+
+            Lihat [CHANGELOG.md](../../blob/main/CHANGELOG.md) untuk daftar perubahan
+            dan [laporan pemeriksaan bug](../../blob/main/docs/bug-report.html).
           files: CLAUDEPAD.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
