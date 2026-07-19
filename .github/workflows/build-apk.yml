@@ -80,7 +80,14 @@ jobs:
                       await ws.send(json.dumps(m))
                   await ws.send("{json rusak")
                   await ws.send(json.dumps({"t":"ping"}))
-                  assert json.loads(await ws.recv())["t"] == "pong"
+                  # Beberapa pesan boleh membalas duluan (mis. volerr saat pycaw
+                  # tidak tersedia di runner Linux), jadi baca sampai ketemu pong.
+                  for _ in range(10):
+                      r = json.loads(await asyncio.wait_for(ws.recv(), 5))
+                      if r["t"] == "pong":
+                          break
+                  else:
+                      raise AssertionError("pong tidak diterima")
                   print("OK - pesan kontrol & JSON rusak ditangani")
 
               await asyncio.sleep(0.4)
