@@ -13,6 +13,13 @@ jobs:
   # Verifikasi protokol server sebelum APK dibangun.
   verify-server:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # v2.4: API process_request berbeda antara websockets <14 dan >=14.
+        # Server harus jalan di keduanya - diuji nyata, bukan diasumsikan.
+        websockets: ["12.0", "13.1", "15.0.1"]
+    name: verify-server (websockets ${{ matrix.websockets }})
     steps:
       - uses: actions/checkout@v4
 
@@ -21,7 +28,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependency server
-        run: pip install "websockets>=12.0,<14.0"
+        run: pip install "websockets==${{ matrix.websockets }}"
 
       - name: Uji dispatch protokol
         working-directory: server
@@ -111,6 +118,7 @@ jobs:
               body = urllib.request.urlopen("http://127.0.0.1:8765/", timeout=5).read().decode()
               assert "CLAUDEPAD OK" in body and srv.APP_VERSION in body
               print("OK - health HTTP di port 8765")
+              print("   generasi API websockets:", srv._ws_api_generation())
 
               # penyaringan adapter virtual (akar bug koneksi WiFi v2.3)
               assert core._score("172.25.224.1", "unknown") >= 90
