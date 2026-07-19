@@ -28,7 +28,7 @@ from input_core import (CLIENTS, LOGQ, WS_PORT, HOSTNAME, log, local_ips,
                         handle_message, volume_get, firewall_status,
                         fix_firewall)
 
-APP_VERSION = "2.3"
+APP_VERSION = "2.4"
 
 ACTIVE_SOCKETS = set()
 MAIN_LOOP = None
@@ -100,26 +100,58 @@ async def handle(ws):
         log(f"[-] {peer} terputus")
 
 
-async def health_request(path, request_headers):
-    """
-    Balas permintaan HTTP biasa di port WebSocket.
-    Dipakai untuk tes cepat: buka http://<ip-pc>:8765 di browser HP.
-    Kalau halaman ini muncul, jaringan & firewall SUDAH benar.
-    """
-    if path.startswith("/ws"):
-        return None                      # biarkan handshake WebSocket lewat
-    body = (
+def _health_body():
+    return (
         "CLAUDEPAD OK\n"
         f"server  : v{APP_VERSION}\n"
         f"host    : {HOSTNAME}\n"
         f"port    : {WS_PORT}\n\n"
         "Halaman ini tampil berarti HP SUDAH bisa menjangkau PC.\n"
         "Kalau aplikasi tetap gagal, masalahnya bukan di firewall.\n"
-    ).encode()
+    )
+
+
+def _ws_api_generation():
+    """
+    2 = API baru (websockets >= 14, process_request(connection, request))
+    1 = API lama (websockets < 14, process_request(path, headers))
+    """
+    try:
+        major = int(str(websockets.__version__).split(".")[0])
+    except Exception:
+        major = 0
+    return 2 if major >= 14 else 1
+
+
+# --- API lama: process_request(path, request_headers) -> tuple | None ---
+async def _health_legacy(path, request_headers):
+    if path.startswith("/ws"):
+        return None
     return (http.HTTPStatus.OK,
             [("Content-Type", "text/plain; charset=utf-8"),
              ("Access-Control-Allow-Origin", "*")],
-            body)
+            _health_body().encode())
+
+
+# --- API baru: process_request(connection, request) -> Response | None ---
+def _health_modern(connection, request):
+    try:
+        path = getattr(request, "path", "/") or "/"
+        if path.startswith("/ws"):
+            return None
+        return connection.respond(http.HTTPStatus.OK, _health_body())
+    except Exception as e:                 # jangan pernah jatuhkan handshake
+        log(f"[!] health endpoint error: {e}")
+        return None
+
+
+def health_request():
+    """Pilih implementasi sesuai versi websockets yang terpasang."""
+    return _health_modern if _ws_api_generation() == 2 else _health_legacy
+
+
+SERVER_READY = threading.Event()
+SERVER_ERROR = [None]
 
 
 def start_server_thread():
@@ -129,12 +161,17 @@ def start_server_thread():
             MAIN_LOOP = asyncio.get_running_loop()
             async with websockets.serve(handle, "0.0.0.0", WS_PORT,
                                         ping_interval=20, ping_timeout=20,
-                                        process_request=health_request):
+                                        process_request=health_request()):
+                SERVER_READY.set()
                 await asyncio.Future()
         try:
             asyncio.run(main())
         except OSError as e:
-            log(f"[!] Port {WS_PORT} tidak bisa dipakai: {e}")
+            SERVER_ERROR[0] = f"Port {WS_PORT} sudah dipakai program lain ({e})"
+            log(f"[!] {SERVER_ERROR[0]}")
+        except Exception as e:
+            SERVER_ERROR[0] = f"Server gagal jalan: {type(e).__name__}: {e}"
+            log(f"[!] {SERVER_ERROR[0]}")
     threading.Thread(target=discovery_loop, daemon=True).start()
     threading.Thread(target=run, daemon=True).start()
 
@@ -148,6 +185,7 @@ MUTED   = "#8e8ea0"
 ACCENT  = "#7c6cff"
 GREEN   = "#4ade80"
 AMBER   = "#fbbf24"
+RED     = "#ff6b6b"
 MONO    = "JetBrains Mono"
 
 
@@ -357,6 +395,30 @@ def run_gui():
         root.after(300, poll)
 
     start_server_thread()
+
+    def self_check():
+        """Pastikan server benar-benar menerima koneksi, bukan cuma terlihat hidup."""
+        ok = SERVER_READY.wait(timeout=6)
+        if not ok or SERVER_ERROR[0]:
+            msg = SERVER_ERROR[0] or "Server tidak siap dalam 6 detik"
+            root.after(0, lambda: status_lbl.config(text=f"  GAGAL: {msg}", fg=RED))
+            log(f"[!] {msg}")
+            return
+        try:
+            import urllib.request
+            body = urllib.request.urlopen(
+                f"http://127.0.0.1:{WS_PORT}/", timeout=5).read().decode()
+            if "CLAUDEPAD OK" in body:
+                log(f"[i] Uji mandiri OK - websockets {websockets.__version__}")
+            else:
+                log("[!] Uji mandiri: balasan tak terduga")
+        except Exception as e:
+            SERVER_ERROR[0] = f"Uji mandiri gagal: {e}"
+            log(f"[!] {SERVER_ERROR[0]}")
+            root.after(0, lambda: status_lbl.config(
+                text="  GAGAL: server tidak merespons - lihat log", fg=RED))
+
+    threading.Thread(target=self_check, daemon=True).start()
     log(f"[i] Server aktif di port {WS_PORT} sebagai '{HOSTNAME}'")
     if ips:
         log(f"[i] Tes dari HP: buka http://{ips[0]}:{WS_PORT} di browser")

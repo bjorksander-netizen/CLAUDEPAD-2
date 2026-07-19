@@ -4,17 +4,21 @@ cd /d "%~dp0"
 
 where python >nul 2>nul || (echo Python belum terpasang. Install dari python.org lalu centang "Add to PATH". & pause & exit /b 1)
 
-REM ---- Pastikan aturan firewall ada (butuh Administrator sekali saja) ----
+REM ---- Firewall: pasang sekali lewat Administrator ----
 netsh advfirewall firewall show rule name="CLAUDEPAD TCP" >nul 2>nul
 if errorlevel 1 (
-  echo [i] Memasang aturan firewall CLAUDEPAD - setujui prompt Administrator...
-  powershell -NoProfile -Command "Start-Process cmd -Verb RunAs -WindowStyle Hidden -ArgumentList '/c netsh advfirewall firewall add rule name=\"CLAUDEPAD TCP\" dir=in action=allow protocol=TCP localport=8765 profile=any ^& netsh advfirewall firewall add rule name=\"CLAUDEPAD UDP\" dir=in action=allow protocol=UDP localport=8766 profile=any'" >nul 2>nul
-  timeout /t 3 /nobreak >nul
+  echo [i] Memasang aturan firewall - setujui prompt Administrator...
+  powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~dp0fix_firewall.bat' -Verb RunAs -WindowStyle Hidden -Wait"
 )
 
-python -c "import websockets, pycaw, pystray, PIL" 2>nul || (
+REM ---- Dependency: cek VERSI, bukan sekadar ada/tidak ----
+REM Versi websockets 14+ memakai API process_request berbeda; server sudah
+REM menangani keduanya, tapi paket lain tetap harus lengkap.
+python -c "import websockets, pycaw, pystray, PIL" 2>nul
+if errorlevel 1 (
   echo Menyiapkan dependency, mohon tunggu...
   python -m pip install --quiet --disable-pip-version-check -r requirements.txt
 )
+
 start "" pythonw pc_server.py
 exit

@@ -6,6 +6,7 @@ Dipisah dari GUI supaya mudah diuji dan dipakai ulang.
 
 import ctypes
 import json
+import os
 import queue
 import random
 import socket
@@ -416,32 +417,34 @@ def firewall_status():
 
 def fix_firewall():
     """
-    Tambahkan aturan firewall lewat UAC (butuh persetujuan Administrator).
-    Aturan dipasang untuk SEMUA profil (termasuk Public) karena jaringan
-    hotspot HP hampir selalu dikategorikan Public oleh Windows.
+    Pasang aturan firewall lewat UAC dengan menjalankan fix_firewall.bat.
+    Memakai file .bat terpisah (bukan perintah panjang inline) karena kutipan
+    bersarang PowerShell -> cmd -> netsh sangat rawan salah; versi sebelumnya
+    memakai ';' sebagai pemisah perintah yang TIDAK dikenal cmd.exe sehingga
+    tombol perbaiki firewall tidak pernah bekerja.
     """
     if not IS_WINDOWS:
         return False
-    cmds = (
-        'netsh advfirewall firewall delete rule name=\"CLAUDEPAD TCP\" ; '
-        'netsh advfirewall firewall delete rule name=\"CLAUDEPAD UDP\" ; '
-        'netsh advfirewall firewall add rule name=\"CLAUDEPAD TCP\" dir=in '
-        'action=allow protocol=TCP localport=8765 profile=any ; '
-        'netsh advfirewall firewall add rule name=\"CLAUDEPAD UDP\" dir=in '
-        'action=allow protocol=UDP localport=8766 profile=any'
-    )
+    script = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                          "fix_firewall.bat")
+    if not os.path.exists(script):
+        log("[!] fix_firewall.bat tidak ditemukan di folder server")
+        return False
     try:
         subprocess.run([
-            "powershell", "-NoProfile", "-Command",
-            f"Start-Process cmd -Verb RunAs -WindowStyle Hidden "
-            f"-ArgumentList '/c {cmds}'"
-        ], capture_output=True, timeout=60,
+            "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
+            f"Start-Process -FilePath '{script}' -Verb RunAs -WindowStyle Hidden -Wait"
+        ], capture_output=True, timeout=120,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        log("[i] Aturan firewall dipasang (jika UAC disetujui)")
-        return True
     except Exception as e:
-        log(f"[!] Gagal memasang aturan firewall: {e}")
+        log(f"[!] Gagal menjalankan fix_firewall.bat: {e}")
         return False
+
+    if firewall_status():
+        log("[i] Aturan firewall terpasang.")
+        return True
+    log("[!] Aturan firewall masih belum ada - prompt Administrator ditolak?")
+    return False
 
 
 def enable_usb_mode():
