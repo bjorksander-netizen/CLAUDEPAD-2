@@ -5,7 +5,8 @@ bersamaan, dan server menolak koneksi bila keduanya berbeda.
 
 | Versi | Inti perubahan |
 |---|---|
-| **v2.4** | Perbaikan fatal HTTP 500 di semua koneksi; firewall benar; logo aplikasi |
+| **v2.5** | Panel ketik pop-up dengan latar blur; indikator ping; rotasi input 3 arah |
+| v2.4 | Perbaikan fatal HTTP 500 di semua koneksi; firewall benar; logo aplikasi |
 | v2.3 | Koneksi WiFi/Hotspot: adapter virtual disaring, socket diikat ke interface hotspot; mode diagnosa |
 | v2.2 | Slider blur & haptic, backspace kembali, kunci versi, tombol putuskan koneksi |
 | v2.1 | Perbaikan trackpad hilang & D-Pad raksasa; slider volume; pop-up Advance |
@@ -13,6 +14,26 @@ bersamaan, dan server menolak koneksi bila keduanya berbeda.
 | v1.0 | Rilis pertama |
 
 ---
+
+## v2.5
+
+### Revisi aplikasi
+- **Panel ketik pop-up.** Menyentuh kolom "ketik di sini" kini membuka panel
+  di tengah layar dengan latar diburamkan (mode fokus). Panel **melebar ke
+  atas** mengikuti panjang teks — tepi bawahnya dikunci setelah pengukuran
+  pertama. Tombol Enter tetap tersedia, dan panel bertahan sampai keyboard
+  ditutup sehingga nyaman untuk mengetik beberapa baris berturut-turut.
+  Teks dikirim per huruf, jadi langsung tampil di PC.
+- **Tombol ⌫ dihapus** dari baris utama; fungsi backspace tetap bekerja lewat
+  penghapusan di panel ketik.
+- **Indikator ping** muncul di samping status saat memakai WiFi/Hotspot,
+  diukur tiap 2 detik lewat ping/pong. Warnanya mengikuti kualitas koneksi:
+  hijau di bawah 40 ms, hijau kekuningan sampai 90 ms, kuning sampai 180 ms,
+  jingga sampai 350 ms, merah di atasnya.
+- **Rotasi input tiga arah** — 0°, 90°, dan 270°, berputar bergiliran lewat
+  tombol yang sama. Tulisan di dalam kotak trackpad ikut berputar mengikuti
+  orientasi yang sedang aktif. Gerakan kursor, scroll dua jari, dan gesture
+  tiga jari semuanya menyesuaikan.
 
 ## v2.4
 

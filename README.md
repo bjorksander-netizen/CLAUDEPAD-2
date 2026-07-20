@@ -71,19 +71,35 @@ Mengikuti standar **Windows Precision Touchpad**:
 | ◐ | klik kiri | | ⧉ | salin (Ctrl+C) |
 | ⊙ | klik tengah | | ⎘ | tempel (Ctrl+V) |
 | ◑ | klik kanan | | ↩ | urungkan (Ctrl+Z) |
-| ⌫ | backspace | | ⊞ | Win+Tab |
-| ⏎ | Enter | | ⋯ | panel Advance |
-| ⤢ | rotasi input trackpad | | ⚙ | setting |
-| ⏻ | putuskan koneksi | | | |
+| ⏎ | Enter | | ⊞ | Win+Tab |
+| ⋯ | panel Advance | | ⚙ | setting |
+| ⤢ ⤡ ⤣ | rotasi input 0° / 90° / 270° | | ⏻ | putuskan koneksi |
 
 Panel **Advance** (⋯) muncul sebagai pop-up berisi `esc` · `⇥` Tab · `❖` Win · `⌦` Delete.
 
 **Baris bawah** terbagi dua kolom seimbang: slider volume dan kontrol media di
 kiri, **D-Pad** tombol arah dengan auto-repeat di kanan.
 
-**Rotasi input (⤢)** hanya memutar arah input trackpad 90° — layout tidak
-berubah sama sekali. Saat aktif, geser ke kanan menggerakkan kursor ke atas,
-berguna bila HP diletakkan menyamping.
+### Mengetik
+
+Sentuh kolom **"ketik di sini"** untuk membuka panel ketik di tengah layar
+dengan latar diburamkan. Panel melebar ke atas mengikuti panjang teks, dan
+bertahan sampai keyboard ditutup. Huruf dikirim langsung ke PC saat diketik,
+termasuk backspace.
+
+### Rotasi input
+
+Tombol **⤢ / ⤡ / ⤣** memutar arah input trackpad bergiliran antara **0°, 90°,
+dan 270°** — layout tidak berubah sama sekali. Pada 90°, geser ke kanan
+menggerakkan kursor ke atas; pada 270° ke bawah. Tulisan di dalam kotak
+trackpad ikut berputar mengikuti orientasi aktif. Berguna bila HP diletakkan
+menyamping.
+
+### Indikator ping
+
+Saat memakai WiFi/Hotspot, latensi tampil di samping nama PC dan berganti
+warna mengikuti kualitas koneksi — hijau berarti responsif, merah berarti
+lambat.
 
 ## Setting
 
