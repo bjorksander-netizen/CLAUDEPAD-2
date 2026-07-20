@@ -149,12 +149,20 @@ jobs:
         with:
           gradle-version: "8.4"
 
-      - name: Baca versi aplikasi
+      - name: Baca versi & pastikan APK dan server sama
         id: ver
         run: |
-          V=$(grep -oP 'versionName\s*=\s*"\K[^"]+' android/app/build.gradle.kts)
-          echo "version=$V" >> "$GITHUB_OUTPUT"
-          echo "Versi aplikasi: $V"
+          APK=$(grep -oP 'versionName\s*=\s*"\K[^"]+' android/app/build.gradle.kts)
+          SRV=$(grep -oP 'APP_VERSION\s*=\s*"\K[^"]+' server/pc_server.py)
+          echo "versi APK    : $APK"
+          echo "versi server : $SRV"
+          # Server menolak koneksi bila versi berbeda, jadi keduanya harus
+          # selalu dinaikkan bersamaan. Bedanya ditangkap di sini, bukan di HP.
+          if [ "$APK" != "$SRV" ]; then
+            echo "::error::Versi APK ($APK) tidak sama dengan server ($SRV) - naikkan keduanya"
+            exit 1
+          fi
+          echo "version=$APK" >> "$GITHUB_OUTPUT"
 
       - name: Unduh JetBrains Mono
         continue-on-error: true
@@ -187,15 +195,33 @@ jobs:
           path: CLAUDEPAD.apk
 
       - name: Publikasi release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: latest
-          name: "CLAUDEPAD v${{ steps.ver.outputs.version }}"
-          body: |
-            APK build otomatis dari commit ${{ github.sha }}.
-
-            Lihat [CHANGELOG.md](../../blob/main/CHANGELOG.md) untuk daftar perubahan
-            dan [laporan pemeriksaan bug](../../blob/main/docs/bug-report.html).
-          files: CLAUDEPAD.apk
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          V: ${{ steps.ver.outputs.version }}
+        run: |
+          # API release GitHub sesekali balas "No server is currently available".
+          # Itu gangguan sementara di sisi mereka, bukan kegagalan build -
+          # jadi dicoba ulang beberapa kali dengan jeda menaik.
+          NOTES=$(printf 'APK build otomatis dari commit %s.\n\nLihat CHANGELOG.md untuk daftar perubahan\ndan docs/bug-report.html untuk laporan pemeriksaan bug.' "$GITHUB_SHA")
+
+          for i in 1 2 3 4 5; do
+            echo "--- percobaan publikasi $i ---"
+            if gh release view latest >/dev/null 2>&1; then
+              if gh release edit latest --title "CLAUDEPAD v$V" --notes "$NOTES" \
+                 && gh release upload latest CLAUDEPAD.apk --clobber; then
+                echo "Release v$V berhasil diperbarui"; exit 0
+              fi
+            else
+              if gh release create latest CLAUDEPAD.apk \
+                 --title "CLAUDEPAD v$V" --notes "$NOTES"; then
+                echo "Release v$V berhasil dibuat"; exit 0
+              fi
+            fi
+            SLEEP=$((i * 20))
+            echo "gagal - menunggu ${SLEEP}s lalu mencoba lagi"
+            sleep $SLEEP
+          done
+
+          echo "::error::Gagal mempublikasikan release setelah 5 percobaan."
+          echo "APK tetap tersedia sebagai artefak build di halaman run ini."
+          exit 1
