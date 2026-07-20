@@ -201,6 +201,24 @@ Tanpa file font, aplikasi memakai monospace bawaan sistem dan build tetap berhas
 - Setelah berhasil sekali, server memberi **token pairing** sehingga koneksi
   berikutnya tidak perlu mengetik PIN. Token disimpan di `server/paired.txt`
   dan bisa dihapus lewat Setting atau dengan menghapus berkas itu.
+- **Enkripsi lalu lintas (v3.0+).** Semua perintah dienkripsi ChaCha20 dengan
+  tag HMAC-SHA256; kunci sesi diturunkan dari PIN/token memakai PBKDF2 dan
+  tidak pernah dikirim. Menutup penyadapan dan pengubahan lalu lintas di
+  jaringan lokal.
+- **Kunci versi** — APK dengan versi berbeda dari server ditolak.
+
+## Notifikasi kontrol
+
+Sejak v3.0 muncul notifikasi permanen selama aplikasi berjalan. Saat terhubung
+berisi kontrol media dan volume plus info koneksi; saat belum terhubung berisi
+tombol untuk menyambung langsung. Bisa dipanggil ulang lewat **⚙ Setting →
+tampilkan notifikasi kontrol**.
+
+## Tombol makro kustom
+
+Di **⚙ Setting → TOMBOL MAKRO** kamu bisa membuat sampai enam pintasan sendiri
+— tentukan label, tombol, dan modifier (Ctrl/Shift/Alt/Win). Tombolnya muncul
+di barisnya sendiri di layar utama.
 - **Kunci versi** — APK dengan versi berbeda ditolak.
 - Hanya untuk jaringan lokal. Jangan buka port 8765 ke internet.
 
@@ -213,6 +231,8 @@ CLAUDEPAD/
 ├── server/                 jalan di PC Windows
 │   ├── pc_server.py        GUI desktop + layer WebSocket
 │   ├── input_core.py       injeksi input, volume, gesture, discovery, firewall
+│   ├── crypto_box.py       enkripsi ChaCha20 + HMAC (pasangan CryptoBox.kt)
+│   ├── system_ctl.py       kecerahan, daya, MAC untuk WoL
 │   ├── start_server.bat    jalankan tanpa konsol
 │   ├── fix_firewall.bat    pasang aturan firewall (via UAC)
 │   └── usb_mode.bat        adb reverse

@@ -5,7 +5,8 @@ bersamaan, dan server menolak koneksi bila keduanya berbeda.
 
 | Versi | Inti perubahan |
 |---|---|
-| **v2.9.3** | Arah kursor melenceng 90° saat lanskap diperbaiki |
+| **v3.0** | Notifikasi kontrol persisten · tombol makro kustom · enkripsi lalu lintas |
+| v2.9.3 | Arah kursor melenceng 90° saat lanskap diperbaiki |
 | v2.9.2 | Bar atas lanskap diperbaiki; kecerahan & mute mandiri dihapus; Ctrl+W |
 | v2.9.1 | Perbaikan layout lanskap & tombol Enter; kecerahan jadi opsional |
 | v2.9 | Perbaikan kursor patah-patah; layout lanskap; kecerahan & daya PC; pairing; auto-reconnect |
@@ -20,6 +21,39 @@ bersamaan, dan server menolak koneksi bila keduanya berbeda.
 | v1.0 | Rilis pertama |
 
 ---
+
+## v3.0
+
+Rilis besar. Tiga fitur yang mengubah cara aplikasi dipakai.
+
+### Notifikasi kontrol persisten
+Aplikasi tidak lagi harus dibuka untuk pemakaian sehari-hari.
+- Dijalankan lewat **foreground service**, menjaga koneksi tetap hidup saat
+  aplikasi ditutup.
+- **Mode terhubung** — collapse menampilkan nama PC dan lima tombol
+  (⏮ ⏯ ⏭ − +); expand menambah baris info (jalur koneksi dan ping) serta
+  tombol putuskan. Semua ikon vektor agar tajam dan ikut warna tema sistem.
+- **Mode belum terhubung** — tombol hubungkan, cari otomatis, dan usb langsung
+  dari notifikasi (memakai pairing token, tanpa perlu mengetik PIN). Setelah
+  tersambung, muncul notifikasi kecil dengan tombol buka aplikasi.
+- Bila digeser tutup saat masih terhubung, notifikasi muncul lagi otomatis —
+  dibatasi tiga kali beruntun; setelahnya bisa dipanggil dari Setting.
+  (Android 13+ tidak mengizinkan aplikasi memaksa notifikasi tak bisa ditutup.)
+
+### Tombol makro kustom
+- Buat hingga enam tombol pintasan sendiri lewat Setting: tentukan label,
+  tombol utama, dan modifier (Ctrl/Shift/Alt/Win).
+- Muncul di barisnya sendiri di layar utama, langsung terjangkau.
+
+### Enkripsi lalu lintas
+- Sebelumnya semua perintah dikirim JSON polos di jaringan lokal; siapa pun
+  yang menyadap WiFi bisa membacanya. Kini setiap pesan dienkripsi
+  **ChaCha20** dan diberi tag **HMAC-SHA256** (encrypt-then-MAC), dengan
+  nomor urut anti-putar-ulang.
+- Kunci sesi diturunkan dari PIN atau token pairing memakai **PBKDF2** dan
+  garam acak — kunci tidak pernah dikirim.
+- Implementasi Kotlin dan Python terbukti byte-identik terhadap vektor uji
+  resmi **RFC 8439**, dan diuji setiap build di CI.
 
 ## v2.9.3
 
