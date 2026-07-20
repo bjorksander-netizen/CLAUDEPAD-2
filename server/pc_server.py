@@ -32,7 +32,7 @@ from input_core import (CLIENTS, LOGQ, WS_PORT, HOSTNAME, log, local_ips,
                         handle_message, volume_get, firewall_status,
                         fix_firewall)
 
-APP_VERSION = "2.9"
+APP_VERSION = "2.9.1"
 
 # Token perangkat tepercaya: sekali dipasangkan, HP tidak perlu mengetik PIN
 # lagi. Disimpan di samping berkas server dalam berkas teks sederhana.
