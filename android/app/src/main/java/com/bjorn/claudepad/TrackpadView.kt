@@ -58,18 +58,20 @@ class TrackpadView @JvmOverloads constructor(
     /** Riak lingkaran saat layar disentuh. */
     var showTaps = true
 
+    /**
+     * Orientasi tampilan dalam derajat: 0, 90, atau 270.
+     *
+     * PENTING: nilai ini TIDAK memutar arah input.
+     * Sejak v2.9 seluruh layar ikut berputar, dan Android sudah memutar
+     * koordinat sentuhan mengikuti orientasi layar. Memutarnya sekali lagi
+     * di sini membuat arah kursor melenceng 90° — geser ke atas malah
+     * bergerak ke samping. Nilai ini kini hanya untuk keterangan di layar.
+     */
     var inputRotation = 0
         set(value) {
             field = if (value in intArrayOf(0, 90, 270)) value else 0
             invalidate()
         }
-
-    /** (dx,dy) layar -> (dx,dy) kursor sesuai rotasi yang aktif. */
-    private fun tx(dx: Float, dy: Float): Pair<Float, Float> = when (inputRotation) {
-        90 -> Pair(dy, -dx)
-        270 -> Pair(-dy, dx)
-        else -> Pair(dx, dy)
-    }
 
     /** Nama PC yang tampil di tengah trackpad. */
     var deviceName: String = "—"
@@ -171,7 +173,7 @@ class TrackpadView @JvmOverloads constructor(
         val d = resources.displayMetrics.density
         if (inputRotation != 0) {
             hintPaint.textSize = 11f * d
-            canvas.drawText("input diputar ${inputRotation}°",
+            canvas.drawText("tampilan diputar ${inputRotation}°",
                 width / 2f, height / 2f - 26f * d, hintPaint)
             hintPaint.textSize = 10f * d
         }
@@ -295,7 +297,8 @@ class TrackpadView @JvmOverloads constructor(
                     // ---- 3 jari: gesture sistem ----
                     e.pointerCount >= 3 -> {
                         if (!threeFingerFired) {
-                            val (gx, gy) = tx(x - threeStartX, y - threeStartY)
+                            val gx = x - threeStartX
+                            val gy = y - threeStartY
                             if (abs(gx) > threeSwipeMin || abs(gy) > threeSwipeMin) {
                                 val g = if (abs(gx) > abs(gy)) {
                                     if (gx > 0) "appnext" else "appprev"
@@ -328,7 +331,8 @@ class TrackpadView @JvmOverloads constructor(
                             // Sumbu scroll ditentukan oleh arah dominan gerakan
                             // dua jari, lalu dikunci sampai jari diangkat agar
                             // tidak berganti-ganti di tengah gulungan.
-                            val (sx, sy) = tx(dx, dy)
+                            val sx = dx
+                            val sy = dy
                             if (scrollAxis == 0) {
                                 scrollProbeX += kotlin.math.abs(sx)
                                 scrollProbeY += kotlin.math.abs(sy)
@@ -361,8 +365,7 @@ class TrackpadView @JvmOverloads constructor(
 
                     // ---- 1 jari: gerakkan kursor ----
                     moved || dragging -> {
-                        val (mx, my) = tx(dx, dy)
-                        listener?.onMove((mx * sensitivity).toInt(), (my * sensitivity).toInt())
+                        listener?.onMove((dx * sensitivity).toInt(), (dy * sensitivity).toInt())
                     }
                 }
                 lastX = x; lastY = y

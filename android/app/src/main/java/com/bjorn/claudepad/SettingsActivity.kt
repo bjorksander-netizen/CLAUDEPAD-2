@@ -32,8 +32,9 @@ class SettingsActivity : AppCompatActivity() {
             Sumbu scroll dikunci setelah arah dominan terdeteksi,
             jadi gulungan tidak berpindah arah di tengah jalan.
 
-            Semua gestur mengikuti rotasi input yang sedang aktif
-            (0°, 90°, atau 270°).
+            Tombol orientasi memutar seluruh tampilan (0°, 90°, 270°).
+            Arah gestur selalu mengikuti layar apa adanya — geser ke atas
+            berarti kursor ke atas, di orientasi mana pun.
         """.trimIndent()
     }
 
