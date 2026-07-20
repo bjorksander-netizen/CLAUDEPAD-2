@@ -43,16 +43,23 @@ class TrackpadView @JvmOverloads constructor(
     var naturalScroll = false
 
     /**
-     * Rotasi INPUT trackpad (fitur orientasi): layout tidak berubah sama sekali,
-     * hanya arah input yang diputar 90°. Saat aktif, swipe ke kanan
-     * menggerakkan kursor ke ATAS, dst.
+     * Rotasi INPUT trackpad dalam derajat: 0, 90, atau 270.
+     * Layout tidak berubah sama sekali — hanya arah input yang diputar.
+     *   90°  : geser ke kanan  -> kursor ke ATAS
+     *   270° : geser ke kanan  -> kursor ke BAWAH
      */
-    var inputRotated = false
-        set(value) { field = value; invalidate() }
+    var inputRotation = 0
+        set(value) {
+            field = if (value in intArrayOf(0, 90, 270)) value else 0
+            invalidate()
+        }
 
-    /** (dx,dy) layar -> (dx,dy) kursor sesuai mode rotasi. */
-    private fun tx(dx: Float, dy: Float): Pair<Float, Float> =
-        if (inputRotated) Pair(dy, -dx) else Pair(dx, dy)
+    /** (dx,dy) layar -> (dx,dy) kursor sesuai rotasi yang aktif. */
+    private fun tx(dx: Float, dy: Float): Pair<Float, Float> = when (inputRotation) {
+        90 -> Pair(dy, -dx)
+        270 -> Pair(-dy, dx)
+        else -> Pair(dx, dy)
+    }
 
     /** Nama PC yang tampil di tengah trackpad. */
     var deviceName: String = "—"
@@ -116,14 +123,23 @@ class TrackpadView @JvmOverloads constructor(
 
         namePaint.textSize = 15f * resources.displayMetrics.density
         hintPaint.textSize = 10f * resources.displayMetrics.density
-        canvas.drawText(deviceName, width / 2f, height / 2f, namePaint)
-        if (inputRotated) {
-            hintPaint.textSize = 11f * resources.displayMetrics.density
-            canvas.drawText("⤢ input diputar 90°", width / 2f,
-                34f * resources.displayMetrics.density, hintPaint)
+
+        // Teks di dalam kotak trackpad ikut berputar mengikuti rotasi input,
+        // supaya arah "atas" yang dirasakan pengguna sesuai dengan tulisannya.
+        canvas.save()
+        canvas.rotate(inputRotation.toFloat(), width / 2f, height / 2f)
+
+        val d = resources.displayMetrics.density
+        if (inputRotation != 0) {
+            hintPaint.textSize = 11f * d
+            canvas.drawText("input diputar ${inputRotation}°",
+                width / 2f, height / 2f - 26f * d, hintPaint)
+            hintPaint.textSize = 10f * d
         }
+        canvas.drawText(deviceName, width / 2f, height / 2f, namePaint)
         canvas.drawText("1 jari gerak · 2 jari scroll/zoom · 3 jari gesture",
-            width / 2f, height / 2f + 22f * resources.displayMetrics.density, hintPaint)
+            width / 2f, height / 2f + 22f * d, hintPaint)
+        canvas.restore()
     }
 
     private fun dist(e: MotionEvent): Float {
@@ -202,7 +218,11 @@ class TrackpadView @JvmOverloads constructor(
                                 Haptics.tick(); listener?.onZoom(-1); pinchAccum += pinchStep
                             }
                         } else {
-                            scrollAccum += if (inputRotated) -dx else dy
+                            scrollAccum += when (inputRotation) {
+                                90 -> -dx
+                                270 -> dx
+                                else -> dy
+                            }
                             val dir = if (naturalScroll) -1 else 1
                             while (scrollAccum >= scrollStep) {
                                 Haptics.tick(); listener?.onScroll(120 * dir); scrollAccum -= scrollStep

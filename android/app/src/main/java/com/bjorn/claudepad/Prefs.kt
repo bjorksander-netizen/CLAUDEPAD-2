@@ -11,9 +11,27 @@ object Prefs {
     fun hapticEnabled(ctx: Context) = sp(ctx).getBoolean("haptic", true)
     fun setHaptic(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("haptic", v).apply()
 
-    /** Rotasi input trackpad 90° (layout tidak berubah). */
-    fun inputRotated(ctx: Context) = sp(ctx).getBoolean("input_rotated", false)
-    fun setInputRotated(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("input_rotated", v).apply()
+    /**
+     * Rotasi input trackpad dalam derajat: 0, 90, atau 270.
+     * Hanya arah input yang berputar — layout tidak berubah sama sekali.
+     */
+    fun inputRotation(ctx: Context): Int {
+        val v = sp(ctx).getInt("input_rotation", -1)
+        if (v in intArrayOf(0, 90, 270)) return v
+        // migrasi dari setting lama yang masih boolean
+        val legacy = try { sp(ctx).getBoolean("input_rotated", false) } catch (e: Exception) { false }
+        return if (legacy) 90 else 0
+    }
+
+    fun setInputRotation(ctx: Context, deg: Int) =
+        sp(ctx).edit().putInt("input_rotation", if (deg in intArrayOf(0, 90, 270)) deg else 0).apply()
+
+    /** Urutan siklus tombol rotasi: 0 -> 90 -> 270 -> 0. */
+    fun nextRotation(cur: Int) = when (cur) {
+        0 -> 90
+        90 -> 270
+        else -> 0
+    }
 
     fun sensitivity(ctx: Context) = sp(ctx).getFloat("sens", 1.4f)
     fun setSensitivity(ctx: Context, v: Float) = sp(ctx).edit().putFloat("sens", v).apply()

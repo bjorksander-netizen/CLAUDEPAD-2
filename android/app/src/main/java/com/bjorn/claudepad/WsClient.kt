@@ -43,6 +43,14 @@ object WsClient {
         private set
     @Volatile var volume: Int = 50
 
+    /** Ping terakhir dalam ms; -1 kalau belum terukur. */
+    @Volatile var pingMs: Int = -1
+        private set
+
+    private var pingSentAt = 0L
+    /** Dipanggil setiap kali ping baru terukur. */
+    var onPing: ((Int) -> Unit)? = null
+
     var onState: ((Boolean, String) -> Unit)? = null
     var onMessage: ((JSONObject) -> Unit)? = null
 
@@ -75,6 +83,14 @@ object WsClient {
                         onState?.invoke(false, msg)
                         webSocket.close(1000, null)
                     }
+                    "pong" -> {
+                        if (pingSentAt > 0L) {
+                            pingMs = (System.currentTimeMillis() - pingSentAt).toInt()
+                                .coerceAtMost(9999)
+                            pingSentAt = 0L
+                            onPing?.invoke(pingMs)
+                        }
+                    }
                     "vol" -> {
                         if (!o.isNull("v")) volume = o.optInt("v", volume)
                         onMessage?.invoke(o)
@@ -102,6 +118,8 @@ object WsClient {
 
     fun disconnect() {
         connected = false
+        pingMs = -1
+        pingSentAt = 0L
         ws?.close(1000, null)
         ws = null
     }
@@ -133,4 +151,13 @@ object WsClient {
 
     fun volSet(v: Int) = send(JSONObject().put("t", "volset").put("v", v))
     fun volGet() = send("volget")
+
+    /** Kirim ping untuk mengukur latensi. Diabaikan bila ping sebelumnya belum dibalas. */
+    fun measurePing() {
+        if (ws == null) return
+        val now = System.currentTimeMillis()
+        if (pingSentAt > 0L && now - pingSentAt < 4000) return   // masih menunggu balasan
+        pingSentAt = now
+        send("ping")
+    }
 }

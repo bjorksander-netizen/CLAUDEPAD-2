@@ -144,10 +144,22 @@ class SettingsActivity : AppCompatActivity() {
             { Prefs.keepAwake(this) },
             { v -> Prefs.setKeepAwake(this, v) })
 
-        toggleRow(R.id.rowOrientation, R.id.tvOrientation,
-            { Prefs.inputRotated(this) },
-            { v -> Prefs.setInputRotated(this, v) },
-            onText = "diputar 90°", offText = "normal")
+        bindRotationRow()
+    }
+
+    /** Rotasi input berputar antara 0°, 90°, dan 270°. */
+    private fun bindRotationRow() {
+        val label = findViewById<TextView>(R.id.tvOrientation)
+        fun render() {
+            val deg = Prefs.inputRotation(this)
+            label.text = if (deg == 0) "normal" else "diputar ${deg}°"
+        }
+        render()
+        findViewById<View>(R.id.rowOrientation).setOnClickListener {
+            Haptics.medium()
+            Prefs.setInputRotation(this, Prefs.nextRotation(Prefs.inputRotation(this)))
+            render()
+        }
     }
 
     private fun bindSensitivity() {
