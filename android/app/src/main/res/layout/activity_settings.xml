@@ -123,7 +123,7 @@
             </LinearLayout>
             <View style="@style/Divider" />
             <LinearLayout android:id="@+id/rowOrientation" style="@style/RowItem">
-                <TextView style="@style/RowTitle" android:text="rotasi input trackpad" />
+                <TextView style="@style/RowTitle" android:text="orientasi tampilan" />
                 <TextView android:id="@+id/tvOrientation" style="@style/RowToggle" android:text="vertikal" />
             </LinearLayout>
         </LinearLayout>
