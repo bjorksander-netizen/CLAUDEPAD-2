@@ -287,6 +287,10 @@ def handle_message(m, reply):
             reply({"t": "volerr"})
     elif t == "volget":
         reply({"t": "vol", "v": volume_get()})
+    elif t == "radio":
+        which = m.get("d", "")
+        ok, msg = toggle_radio(which)
+        reply({"t": "radio_result", "d": which, "ok": ok, "msg": msg})
     elif t == "ping":
         reply({"t": "pong"})
     return t
@@ -445,6 +449,131 @@ def fix_firewall():
         return True
     log("[!] Aturan firewall masih belum ada - prompt Administrator ditolak?")
     return False
+
+
+# ---------------------------------------------------------------- Radio -----
+# Kontrol WiFi & Bluetooth memakai Windows Radio Management API lewat WinRT.
+# Cara ini TIDAK membutuhkan hak Administrator, berbeda dengan
+# Enable-NetAdapter/Disable-NetAdapter yang selalu meminta elevasi.
+_PS_RADIO = r"""
+$ErrorActionPreference = 'Stop'
+try {
+  Add-Type -AssemblyName System.Runtime.WindowsRuntime
+  $awaiters = [System.WindowsRuntimeSystemExtensions].GetMethods() |
+    Where-Object { $_.Name -eq 'GetAwaiter' -and $_.GetParameters().Count -eq 1 }
+
+  function Await($task, $type) {
+    $m = $awaiters | Where-Object {
+      $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1'
+    } | Select-Object -First 1
+    $m = $m.MakeGenericMethod($type)
+    $m.Invoke($null, @($task)).GetResult()
+  }
+
+  [Windows.Devices.Radios.Radio, Windows.System.Devices, ContentType=WindowsRuntime] | Out-Null
+  [Windows.Devices.Radios.RadioAccessStatus, Windows.System.Devices, ContentType=WindowsRuntime] | Out-Null
+
+  $access = Await ([Windows.Devices.Radios.Radio]::RequestAccessAsync()) `
+                  ([Windows.Devices.Radios.RadioAccessStatus])
+  if ($access -ne 'Allowed') { Write-Output 'DENIED'; exit }
+
+  $radios = Await ([Windows.Devices.Radios.Radio]::GetRadiosAsync()) `
+                  ([System.Collections.Generic.IReadOnlyList[Windows.Devices.Radios.Radio]])
+  $kind = '__KIND__'
+  $r = $radios | Where-Object { $_.Kind -eq $kind } | Select-Object -First 1
+  if ($null -eq $r) { Write-Output 'NOTFOUND'; exit }
+
+  $target = if ($r.State -eq 'On') { 'Off' } else { 'On' }
+  $res = Await ($r.SetStateAsync($target)) ([Windows.Devices.Radios.RadioAccessStatus])
+  if ($res -eq 'Allowed') { Write-Output "OK:$target" } else { Write-Output "FAIL:$res" }
+} catch {
+  Write-Output "ERR:$($_.Exception.Message)"
+}
+"""
+
+# Hotspot memakai NetworkOperatorTetheringManager (WinRT). Lebih rapuh:
+# butuh profil koneksi aktif dan tidak semua adapter mendukungnya.
+_PS_HOTSPOT = r"""
+$ErrorActionPreference = 'Stop'
+try {
+  Add-Type -AssemblyName System.Runtime.WindowsRuntime
+  $awaiters = [System.WindowsRuntimeSystemExtensions].GetMethods() |
+    Where-Object { $_.Name -eq 'GetAwaiter' -and $_.GetParameters().Count -eq 1 }
+  function Await($task, $type) {
+    $m = $awaiters | Where-Object {
+      $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1'
+    } | Select-Object -First 1
+    $m = $m.MakeGenericMethod($type)
+    $m.Invoke($null, @($task)).GetResult()
+  }
+
+  [Windows.Networking.NetworkOperators.NetworkOperatorTetheringManager, Windows.Networking, ContentType=WindowsRuntime] | Out-Null
+  [Windows.Networking.Connectivity.NetworkInformation, Windows.Networking, ContentType=WindowsRuntime] | Out-Null
+
+  $profile = [Windows.Networking.Connectivity.NetworkInformation]::GetInternetConnectionProfile()
+  if ($null -eq $profile) { Write-Output 'NOPROFILE'; exit }
+
+  $mgr = [Windows.Networking.NetworkOperators.NetworkOperatorTetheringManager]::CreateFromConnectionProfile($profile)
+  if ($mgr.TetheringOperationalState -eq 'On') {
+    $op = Await ($mgr.StopTetheringAsync()) ([Windows.Networking.NetworkOperators.NetworkOperatorTetheringOperationResult])
+    $target = 'Off'
+  } else {
+    $op = Await ($mgr.StartTetheringAsync()) ([Windows.Networking.NetworkOperators.NetworkOperatorTetheringOperationResult])
+    $target = 'On'
+  }
+  if ($op.Status -eq 'Success') { Write-Output "OK:$target" }
+  else { Write-Output "FAIL:$($op.Status) $($op.AdditionalErrorMessage)" }
+} catch {
+  Write-Output "ERR:$($_.Exception.Message)"
+}
+"""
+
+
+def _run_powershell(script, timeout=45):
+    try:
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+            capture_output=True, text=True, timeout=timeout,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        return (r.stdout or r.stderr or "").strip()
+    except subprocess.TimeoutExpired:
+        return "ERR:timeout"
+    except FileNotFoundError:
+        return "ERR:powershell tidak ditemukan"
+    except Exception as e:
+        return f"ERR:{e}"
+
+
+def toggle_radio(which):
+    """
+    Nyalakan/matikan radio PC: 'wifi', 'bluetooth', atau 'hotspot'.
+    Mengembalikan (berhasil, pesan) untuk ditampilkan di HP.
+    """
+    if not IS_WINDOWS:
+        return False, "hanya tersedia di Windows"
+
+    if which == "hotspot":
+        out = _run_powershell(_PS_HOTSPOT, timeout=60)
+    elif which in ("wifi", "bluetooth"):
+        kind = "WiFi" if which == "wifi" else "Bluetooth"
+        out = _run_powershell(_PS_RADIO.replace("__KIND__", kind))
+    else:
+        return False, "perangkat tidak dikenal"
+
+    line = out.splitlines()[-1] if out else ""
+    if line.startswith("OK:"):
+        state = "menyala" if line.split(":", 1)[1] == "On" else "mati"
+        log(f"[i] {which} PC kini {state}")
+        return True, f"{which} {state}"
+    if line == "DENIED":
+        return False, f"{which}: akses radio ditolak - izinkan di Pengaturan Windows"
+    if line == "NOTFOUND":
+        return False, f"{which}: perangkat tidak ada di PC ini"
+    if line == "NOPROFILE":
+        return False, "hotspot: PC tidak punya koneksi internet aktif"
+    msg = line.replace("FAIL:", "").replace("ERR:", "").strip() or "gagal"
+    log(f"[!] Gagal mengubah {which}: {msg}")
+    return False, f"{which}: {msg[:90]}"
 
 
 def enable_usb_mode():
