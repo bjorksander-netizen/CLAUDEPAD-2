@@ -30,6 +30,27 @@ jobs:
       - name: Install dependency server
         run: pip install "websockets==${{ matrix.websockets }}"
 
+      - name: Uji kripto vs RFC 8439
+        working-directory: server
+        run: |
+          python - <<'PY'
+          import crypto_box as cb
+          key = bytes(range(32))
+          nonce = bytes([0,0,0,0,0,0,0,0x4a,0,0,0,0])
+          plain = (b"Ladies and Gentlemen of the class of '99: If I could offer you "
+                   b"only one tip for the future, sunscreen would be it.")
+          ct = cb.chacha20(key, nonce, plain, 1)
+          assert ct[:16] == bytes.fromhex("6e2e359a2568f98041ba0728dd0d6981")
+          # seal/open bolak-balik + tolak kunci salah
+          salt = cb.new_salt()
+          a = cb.Session.derive("1234", salt); b = cb.Session.derive("1234", salt)
+          blob = a.seal(b"halo"); assert b.open(blob) == b"halo"
+          c = cb.Session.derive("9999", salt)
+          try: c.open(a.seal(b"x")); raise SystemExit("kunci salah lolos!")
+          except ValueError: pass
+          print("OK - ChaCha20 cocok RFC 8439, seal/open & tolak kunci salah")
+          PY
+
       - name: Uji dispatch protokol
         working-directory: server
         run: |
@@ -110,6 +131,54 @@ jobs:
                       rr = json.loads(await asyncio.wait_for(ws.recv(), 20))
                       assert rr["t"] == "radio_result" and rr["d"] == dev and "msg" in rr, rr
                   print("OK - radio_result selalu dibalas")
+
+                  # kecerahan & aksi daya juga wajib selalu membalas
+                  await ws.send(json.dumps({"t":"bright","d":10}))
+                  br = json.loads(await asyncio.wait_for(ws.recv(), 20))
+                  assert br["t"] == "bright_result" and "msg" in br, br
+                  for act in ("shutdown","restart","sleep","hibernate",
+                              "logoff","lock","screenoff"):
+                      await ws.send(json.dumps({"t":"power","a":act}))
+                      pr = json.loads(await asyncio.wait_for(ws.recv(), 20))
+                      assert pr["t"] == "power_result" and pr["a"] == act, pr
+                  print("OK - bright_result & power_result dibalas")
+
+              # pairing: masuk dengan PIN memberi token, token itu bisa dipakai
+              # untuk masuk lagi tanpa mengetik PIN
+              async with websockets.connect("ws://127.0.0.1:8765/ws") as ws2:
+                  await ws2.send(json.dumps({"t":"auth","pin":core.PIN,
+                                             "ver":srv.APP_VERSION}))
+                  a = json.loads(await ws2.recv())
+                  tok = a.get("token","")
+                  assert tok, "server harus memberi token pairing"
+              async with websockets.connect("ws://127.0.0.1:8765/ws") as ws3:
+                  await ws3.send(json.dumps({"t":"auth","token":tok,
+                                             "ver":srv.APP_VERSION}))
+                  a = json.loads(await ws3.recv())
+                  assert a["t"] == "auth_ok", a
+              async with websockets.connect("ws://127.0.0.1:8765/ws") as ws4:
+                  await ws4.send(json.dumps({"t":"auth","token":"palsu",
+                                             "ver":srv.APP_VERSION}))
+                  a = json.loads(await ws4.recv())
+                  assert a["t"] == "auth_fail", a
+              print("OK - pairing token: diberi, diterima, yang palsu ditolak")
+
+              # enkripsi v3.0: handshake hello -> salt -> auth -> traffic terenkripsi
+              import crypto_box as cb
+              async with websockets.connect("ws://127.0.0.1:8765/ws") as we:
+                  await we.send(json.dumps({"t":"hello"}))
+                  h = json.loads(await we.recv())
+                  assert h["t"] == "hello_ok" and "salt" in h, h
+                  salt = bytes.fromhex(h["salt"])
+                  await we.send(json.dumps({"t":"auth","pin":core.PIN,"ver":srv.APP_VERSION}))
+                  a = json.loads(await we.recv())
+                  assert a["t"] == "auth_ok" and a["encrypted"] is True, a
+                  box = cb.Session.derive(core.PIN, salt)
+                  await we.send(box.seal(json.dumps({"t":"ping"}).encode()))
+                  raw = await we.recv()
+                  assert isinstance(raw, (bytes, bytearray)), "balasan harus terenkripsi"
+                  assert json.loads(box.open(raw).decode())["t"] == "pong"
+              print("OK - enkripsi lalu lintas end-to-end")
 
               await asyncio.sleep(0.4)
               assert len(core.CLIENTS) == 0
