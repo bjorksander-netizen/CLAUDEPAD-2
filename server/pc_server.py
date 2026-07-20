@@ -14,6 +14,7 @@ import asyncio
 import http
 import json
 import os
+from paths import data_path
 import secrets
 import socket
 import queue
@@ -33,11 +34,11 @@ from input_core import (CLIENTS, LOGQ, WS_PORT, HOSTNAME, log, local_ips,
                         handle_message, volume_get, firewall_status,
                         fix_firewall)
 
-APP_VERSION = "3.0"
+APP_VERSION = "3.1"
 
 # Token perangkat tepercaya: sekali dipasangkan, HP tidak perlu mengetik PIN
 # lagi. Disimpan di samping berkas server dalam berkas teks sederhana.
-PAIR_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "paired.txt")
+PAIR_FILE = data_path("paired.txt")
 
 
 def load_tokens():

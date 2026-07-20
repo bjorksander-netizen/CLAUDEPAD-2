@@ -7,6 +7,7 @@ Dipisah dari GUI supaya mudah diuji dan dipakai ulang.
 import ctypes
 import json
 import os
+from paths import resource_path, data_path
 import queue
 import random
 import socket
@@ -440,8 +441,7 @@ def fix_firewall():
     """
     if not IS_WINDOWS:
         return False
-    script = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                          "fix_firewall.bat")
+    script = resource_path("fix_firewall.bat")
     if not os.path.exists(script):
         log("[!] fix_firewall.bat tidak ditemukan di folder server")
         return False
