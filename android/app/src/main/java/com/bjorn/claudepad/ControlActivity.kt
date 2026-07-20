@@ -142,6 +142,8 @@ class ControlActivity : AppCompatActivity() {
         trackpad.sensitivity = Prefs.sensitivity(this)
         trackpad.naturalScroll = Prefs.naturalScroll(this)
         trackpad.inputRotation = Prefs.inputRotation(this)
+        trackpad.pointerLocation = Prefs.pointerLocation(this)
+        trackpad.showTaps = Prefs.showTaps(this)
         trackpad.listener = object : TrackpadView.Listener {
             override fun onMove(dx: Int, dy: Int) = WsClient.move(dx, dy)
             override fun onLeftClick() = WsClient.click("left")
@@ -199,7 +201,9 @@ class ControlActivity : AppCompatActivity() {
         dialog.window?.apply {
             setLayout(WindowManager.LayoutParams.MATCH_PARENT,
                       WindowManager.LayoutParams.MATCH_PARENT)
-            setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or
+            // ADJUST_NOTHING: jendela TIDAK digeser/diperkecil saat keyboard
+            // muncul, sehingga panel tetap di tengah layar.
+            setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING or
                              WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
             // Latar diburamkan supaya fokus hanya ke panel ini.
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -214,29 +218,30 @@ class ControlActivity : AppCompatActivity() {
         root.setBackgroundColor(Color.argb(0x66, 6, 6, 12))
         root.setOnClickListener { dialog.dismiss() }   // ketuk luar = tutup
 
-        // --- kunci tepi bawah kartu di posisi tengah layar ---
-        var anchored = false
-        root.viewTreeObserver.addOnGlobalLayoutListener(object :
+        // --- panel tetap di tengah; pertumbuhan hanya ke ATAS ---
+        // Tinggi awal kartu dicatat sekali, lalu setiap penambahan tinggi
+        // digeser ke bawah setengahnya. Efeknya tepi bawah diam di tempat
+        // dan kartu memanjang ke atas, sementara posisinya tetap terpusat.
+        var baseHeight = 0
+        card.viewTreeObserver.addOnGlobalLayoutListener {
+            if (card.height > 0) {
+                if (baseHeight == 0) baseHeight = card.height
+                card.translationY = ((card.height - baseHeight) / 2f)
+            }
+        }
+
+        // Keyboard ditutup -> tutup panel.
+        val decor = dialog.window?.decorView
+        decor?.viewTreeObserver?.addOnGlobalLayoutListener(object :
             ViewTreeObserver.OnGlobalLayoutListener {
-            private var lastVisible = 0
+            private var everOpen = false
             override fun onGlobalLayout() {
                 val r = Rect()
-                root.getWindowVisibleDisplayFrame(r)
-                val visible = r.height()
-
-                if (!anchored && card.height > 0 && visible > 0) {
-                    // posisi awal: kartu tampak di tengah area yang terlihat
-                    val lp = card.layoutParams as FrameLayout.LayoutParams
-                    lp.bottomMargin = ((visible - card.height) / 2).coerceAtLeast(0)
-                    card.layoutParams = lp
-                    anchored = true
-                }
-
-                // keyboard ditutup -> tutup pop-up
-                if (lastVisible != 0 && visible > lastVisible + 150 && anchored) {
-                    root.post { dialog.dismiss() }
-                }
-                lastVisible = visible
+                decor.getWindowVisibleDisplayFrame(r)
+                val screenH = decor.height.takeIf { it > 0 } ?: return
+                val keyboard = screenH - r.bottom
+                if (keyboard > screenH * 0.15) everOpen = true
+                else if (everOpen) decor.post { dialog.dismiss() }
             }
         })
 
@@ -316,8 +321,8 @@ class ControlActivity : AppCompatActivity() {
         val content = LayoutInflater.from(this).inflate(R.layout.popup_advance, null)
         Fonts.apply(content)
         val popup = PopupWindow(content,
-            (200 * resources.displayMetrics.density).toInt(),
-            (200 * resources.displayMetrics.density).toInt(),
+            (210 * resources.displayMetrics.density).toInt(),
+            (210 * resources.displayMetrics.density).toInt(),
             true)
         popup.elevation = 24f
         fun bind(id: Int, action: () -> Unit) {
@@ -329,6 +334,8 @@ class ControlActivity : AppCompatActivity() {
         bind(R.id.kTab) { WsClient.key("tab") }
         bind(R.id.kWin) { WsClient.key("win") }
         bind(R.id.kDel) { WsClient.key("delete") }
+        // Ctrl+, — pintasan buka pengaturan di banyak aplikasi Windows
+        bind(R.id.kSettings) { WsClient.key(",", listOf("ctrl")) }
         popup.setOnDismissListener { advancePopup = null }
         popup.showAsDropDown(anchor, 0,
             (-260 * resources.displayMetrics.density).toInt())
@@ -435,6 +442,8 @@ class ControlActivity : AppCompatActivity() {
         trackpad.sensitivity = Prefs.sensitivity(this)
         trackpad.naturalScroll = Prefs.naturalScroll(this)
         trackpad.inputRotation = Prefs.inputRotation(this)
+        trackpad.pointerLocation = Prefs.pointerLocation(this)
+        trackpad.showTaps = Prefs.showTaps(this)
         if (!WsClient.connected) finish()
     }
 

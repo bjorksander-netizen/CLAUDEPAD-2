@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.PointF
 import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.MotionEvent
@@ -48,6 +49,13 @@ class TrackpadView @JvmOverloads constructor(
      *   90°  : geser ke kanan  -> kursor ke ATAS
      *   270° : geser ke kanan  -> kursor ke BAWAH
      */
+    /** Garis bidik + koordinat jari (seperti Pointer location Android). */
+    var pointerLocation = false
+        set(value) { field = value; invalidate() }
+
+    /** Riak lingkaran saat layar disentuh. */
+    var showTaps = true
+
     var inputRotation = 0
         set(value) {
             field = if (value in intArrayOf(0, 90, 270)) value else 0
@@ -82,6 +90,32 @@ class TrackpadView @JvmOverloads constructor(
         textAlign = Paint.Align.CENTER
     }
     private val rect = RectF()
+
+    // ---- umpan balik visual ----
+    private val crossPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 1.5f
+        color = Color.parseColor("#8073E0FF")
+    }
+    private val coordPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#CC73E0FF")
+        textAlign = Paint.Align.LEFT
+    }
+    private val touchDotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#B373E0FF")
+    }
+    private val ripplePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 3f
+    }
+
+    /** Jari yang sedang menempel: id -> posisi. */
+    private val livePointers = LinkedHashMap<Int, PointF>()
+
+    /** Riak yang sedang meredup. */
+    private class Ripple(val x: Float, val y: Float, val start: Long)
+    private val ripples = ArrayList<Ripple>()
+    private val rippleDuration = 420L
 
     // --- state ---
     private var lastX = 0f
@@ -140,6 +174,67 @@ class TrackpadView @JvmOverloads constructor(
         canvas.drawText("1 jari gerak · 2 jari scroll/zoom · 3 jari gesture",
             width / 2f, height / 2f + 22f * d, hintPaint)
         canvas.restore()
+
+        drawFeedback(canvas, d)
+    }
+
+    /** Riak sentuhan dan garis bidik posisi jari. */
+    private fun drawFeedback(canvas: Canvas, d: Float) {
+        val now = System.currentTimeMillis()
+
+        // riak yang meredup
+        if (showTaps && ripples.isNotEmpty()) {
+            val it = ripples.iterator()
+            while (it.hasNext()) {
+                val rp = it.next()
+                val t = (now - rp.start).toFloat() / rippleDuration
+                if (t >= 1f) { it.remove(); continue }
+                val radius = (10f + 34f * t) * d
+                ripplePaint.color = Color.argb(
+                    ((1f - t) * 200).toInt().coerceIn(0, 255), 115, 224, 255)
+                ripplePaint.strokeWidth = (2.5f * (1f - t) + 0.8f) * d
+                canvas.drawCircle(rp.x, rp.y, radius, ripplePaint)
+            }
+            postInvalidateOnAnimation()
+        }
+
+        if (livePointers.isEmpty()) return
+
+        // titik jari
+        if (showTaps) {
+            for (p in livePointers.values) {
+                canvas.drawCircle(p.x, p.y, 9f * d, touchDotPaint)
+            }
+        }
+
+        // garis bidik + koordinat
+        if (pointerLocation) {
+            coordPaint.textSize = 10f * d
+            for ((i, p) in livePointers.values.withIndex()) {
+                canvas.drawLine(0f, p.y, width.toFloat(), p.y, crossPaint)
+                canvas.drawLine(p.x, 0f, p.x, height.toFloat(), crossPaint)
+                canvas.drawText(
+                    "${p.x.toInt()}, ${p.y.toInt()}",
+                    (p.x + 8f * d).coerceAtMost(width - 60f * d),
+                    (p.y - 8f * d).coerceAtLeast(12f * d) + i * 12f * d,
+                    coordPaint)
+            }
+        }
+    }
+
+    private fun trackPointers(e: MotionEvent) {
+        livePointers.clear()
+        for (i in 0 until e.pointerCount) {
+            livePointers[e.getPointerId(i)] = PointF(e.getX(i), e.getY(i))
+        }
+        invalidate()
+    }
+
+    private fun addRipple(x: Float, y: Float) {
+        if (!showTaps) return
+        if (ripples.size > 8) ripples.removeAt(0)
+        ripples.add(Ripple(x, y, System.currentTimeMillis()))
+        postInvalidateOnAnimation()
     }
 
     private fun dist(e: MotionEvent): Float {
@@ -148,8 +243,10 @@ class TrackpadView @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
+        if (pointerLocation || showTaps) trackPointers(e)
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                addRipple(e.x, e.y)
                 lastX = e.x; lastY = e.y
                 downX = e.x; downY = e.y
                 downTime = System.currentTimeMillis()
@@ -167,6 +264,8 @@ class TrackpadView @JvmOverloads constructor(
             }
 
             MotionEvent.ACTION_POINTER_DOWN -> {
+                val pi = e.actionIndex
+                addRipple(e.getX(pi), e.getY(pi))
                 maxPointers = maxOf(maxPointers, e.pointerCount)
                 lastX = e.getX(0); lastY = e.getY(0)
                 if (e.pointerCount == 2) {
@@ -260,6 +359,11 @@ class TrackpadView @JvmOverloads constructor(
             MotionEvent.ACTION_CANCEL -> {
                 if (dragging) { dragging = false; listener?.onDragEnd() }
             }
+        }
+        if (e.actionMasked == MotionEvent.ACTION_UP ||
+            e.actionMasked == MotionEvent.ACTION_CANCEL) {
+            livePointers.clear()
+            invalidate()
         }
         return true
     }

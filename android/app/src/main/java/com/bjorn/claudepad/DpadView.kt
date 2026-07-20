@@ -3,17 +3,24 @@ package com.bjorn.claudepad
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.RadialGradient
 import android.graphics.RectF
+import android.graphics.Shader
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.min
+import kotlin.math.sin
 
 /**
- * D-Pad ala DualShock: 4 arah dalam bentuk salib, dengan auto-repeat saat ditahan.
+ * D-Pad bundar bergaya faset: piringan gelap mengilap dengan potongan
+ * segi banyak yang memantulkan cahaya berbeda-beda, ditambah dua kaki kecil
+ * di bawah. Empat arah dengan auto-repeat saat ditahan.
  */
 class DpadView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null
@@ -22,88 +29,122 @@ class DpadView @JvmOverloads constructor(
     /** Dipanggil dengan "up" / "down" / "left" / "right". */
     var onDirection: ((String) -> Unit)? = null
 
-    private val basePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#3DFFFFFF")
-    }
-    private val pressPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#997C6CFF")
-    }
+    /** Warna sorot arah yang ditekan (diisi dari Accent). */
+    var accentColor: Int = Color.parseColor("#997C6CFF")
+        set(value) { field = value; invalidate() }
 
-    /** Warna sorot arah, di-set dari Accent (mengikuti wallpaper). */
-    var accentColor: Int
-        get() = pressPaint.color
-        set(value) { pressPaint.color = value; invalidate() }
-    private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    private val facetPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val basePaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val rimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = 2f
-        color = Color.parseColor("#40FFFFFF")
+        color = Color.parseColor("#59FFFFFF")
     }
+    private val glossPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val footPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#FF15151C")
+    }
+    private val pressPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val arrowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
+        color = Color.parseColor("#E6FFFFFF")
     }
 
-    private val cross = Path()
+    private val facet = Path()
     private val arrow = Path()
+    private val footRect = RectF()
     private var pressed: String? = null
 
     private val repeatDelay = 380L
     private val repeatInterval = 55L
     private var repeatRunnable: Runnable? = null
 
-    private fun buildCross(w: Float, h: Float) {
-        val size = min(w, h)
-        val cx = w / 2f
-        val cy = h / 2f
-        val arm = size / 2f * 0.94f
-        val half = arm * 0.34f
-        val r = arm * 0.16f
-        cross.reset()
-        val rect = RectF()
-        rect.set(cx - half, cy - arm, cx + half, cy + arm)
-        cross.addRoundRect(rect, r, r, Path.Direction.CW)
-        rect.set(cx - arm, cy - half, cx + arm, cy + half)
-        cross.addRoundRect(rect, r, r, Path.Direction.CW)
-    }
+    /** Sudut potongan faset — jumlah ganjil membuat pantulan terlihat alami. */
+    private val facetCount = 14
+
+    private fun cx() = width / 2f
+    private fun cy() = height / 2f - height * 0.02f
+    private fun radius() = min(width, height) / 2f * 0.86f
 
     override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
         super.onSizeChanged(w, h, ow, oh)
-        buildCross(w.toFloat(), h.toFloat())
+        val r = radius()
+        basePaint.shader = LinearGradient(
+            cx() - r, cy() - r, cx() + r, cy() + r,
+            intArrayOf(
+                Color.parseColor("#FF4A4A55"),
+                Color.parseColor("#FF2A2A33"),
+                Color.parseColor("#FF15151B")
+            ),
+            floatArrayOf(0f, 0.55f, 1f),
+            Shader.TileMode.CLAMP
+        )
+        glossPaint.shader = RadialGradient(
+            cx() - r * 0.35f, cy() - r * 0.45f, r * 1.1f,
+            intArrayOf(Color.parseColor("#40FFFFFF"), Color.TRANSPARENT),
+            floatArrayOf(0f, 1f),
+            Shader.TileMode.CLAMP
+        )
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        canvas.drawPath(cross, basePaint)
-        canvas.drawPath(cross, strokePaint)
+        val cx = cx(); val cy = cy(); val r = radius()
 
-        val w = width.toFloat(); val h = height.toFloat()
-        val cx = w / 2f; val cy = h / 2f
-        val size = min(w, h)
-        val arm = size / 2f * 0.94f
+        // dua kaki kecil di bagian bawah
+        val footW = r * 0.34f
+        val footH = r * 0.16f
+        footRect.set(cx - r * 0.55f, cy + r * 0.86f, cx - r * 0.55f + footW, cy + r * 0.86f + footH)
+        canvas.drawRoundRect(footRect, footH * 0.4f, footH * 0.4f, footPaint)
+        footRect.set(cx + r * 0.55f - footW, cy + r * 0.86f, cx + r * 0.55f, cy + r * 0.86f + footH)
+        canvas.drawRoundRect(footRect, footH * 0.4f, footH * 0.4f, footPaint)
 
-        // sorot arah yang ditekan
-        pressed?.let { dir ->
-            val half = arm * 0.34f
-            val r = arm * 0.16f
-            val rect = RectF()
-            when (dir) {
-                "up" -> rect.set(cx - half, cy - arm, cx + half, cy - half)
-                "down" -> rect.set(cx - half, cy + half, cx + half, cy + arm)
-                "left" -> rect.set(cx - arm, cy - half, cx - half, cy + half)
-                else -> rect.set(cx + half, cy - half, cx + arm, cy + half)
-            }
-            canvas.drawRoundRect(rect, r, r, pressPaint)
+        // piringan dasar
+        canvas.drawCircle(cx, cy, r, basePaint)
+
+        // potongan faset: segitiga dari pusat ke tepi, terang-gelap bergantian
+        val step = (2.0 * Math.PI / facetCount).toFloat()
+        for (i in 0 until facetCount) {
+            val a0 = i * step - Math.PI.toFloat() / 2f
+            val a1 = a0 + step
+            facet.reset()
+            facet.moveTo(cx, cy)
+            facet.lineTo(cx + r * cos(a0), cy + r * sin(a0))
+            facet.lineTo(cx + r * cos(a1), cy + r * sin(a1))
+            facet.close()
+            // sudut menghadap sumber cahaya (kiri atas) tampak lebih terang
+            val light = ((cos(a0 + step / 2f - 2.4f) + 1f) / 2f)
+            val alpha = (18 + light * 46).toInt().coerceIn(0, 255)
+            facetPaint.color = Color.argb(alpha, 255, 255, 255)
+            canvas.drawPath(facet, facetPaint)
         }
 
-        // panah
-        val a = arm * 0.30f
-        val off = arm * 0.62f
+        // sorot arah yang sedang ditekan (seperempat piringan)
+        pressed?.let { dir ->
+            val startAngle = when (dir) {
+                "up" -> -135f
+                "right" -> -45f
+                "down" -> 45f
+                else -> 135f
+            }
+            pressPaint.color = accentColor
+            val rect = RectF(cx - r, cy - r, cx + r, cy + r)
+            canvas.drawArc(rect, startAngle, 90f, true, pressPaint)
+        }
+
+        // kilap dan tepi
+        canvas.drawCircle(cx, cy, r, glossPaint)
+        canvas.drawCircle(cx, cy, r, rimPaint)
+
+        // panah arah
+        val a = r * 0.26f
+        val off = r * 0.62f
         drawArrow(canvas, cx, cy - off, a, 0)
         drawArrow(canvas, cx, cy + off, a, 180)
         drawArrow(canvas, cx - off, cy, a, 270)
         drawArrow(canvas, cx + off, cy, a, 90)
     }
 
-    private fun drawArrow(canvas: Canvas, cx: Float, cy: Float, size: Float, rotation: Int) {
+    private fun drawArrow(canvas: Canvas, x: Float, y: Float, size: Float, rotation: Int) {
         arrow.reset()
         val h = size * 0.55f
         arrow.moveTo(0f, -h)
@@ -111,28 +152,26 @@ class DpadView @JvmOverloads constructor(
         arrow.lineTo(-h * 0.9f, h * 0.6f)
         arrow.close()
         canvas.save()
-        canvas.translate(cx, cy)
+        canvas.translate(x, y)
         canvas.rotate(rotation.toFloat())
         canvas.drawPath(arrow, arrowPaint)
         canvas.restore()
     }
 
     private fun hitTest(x: Float, y: Float): String? {
-        val cx = width / 2f
-        val cy = height / 2f
-        val dx = x - cx
-        val dy = y - cy
-        val size = min(width, height) / 2f
-        if (hypotOk(dx, dy, size * 0.18f)) return null      // pusat = mati
-        if (abs(dx) > size || abs(dy) > size) return null
+        val dx = x - cx()
+        val dy = y - cy()
+        val r = radius()
+        val dist2 = dx * dx + dy * dy
+        // pusat mati, dan di luar piringan juga diabaikan
+        if (dist2 < (r * 0.22f) * (r * 0.22f)) return null
+        if (dist2 > r * r) return null
         return if (abs(dx) > abs(dy)) {
             if (dx > 0) "right" else "left"
         } else {
             if (dy > 0) "down" else "up"
         }
     }
-
-    private fun hypotOk(dx: Float, dy: Float, r: Float) = (dx * dx + dy * dy) < r * r
 
     private fun startRepeat(dir: String) {
         stopRepeat()

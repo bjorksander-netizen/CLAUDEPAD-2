@@ -144,6 +144,14 @@ class SettingsActivity : AppCompatActivity() {
             { Prefs.keepAwake(this) },
             { v -> Prefs.setKeepAwake(this, v) })
 
+        toggleRow(R.id.rowShowTaps, R.id.tvShowTaps,
+            { Prefs.showTaps(this) },
+            { v -> Prefs.setShowTaps(this, v) })
+
+        toggleRow(R.id.rowPointerLoc, R.id.tvPointerLoc,
+            { Prefs.pointerLocation(this) },
+            { v -> Prefs.setPointerLocation(this, v) })
+
         bindRotationRow()
     }
 

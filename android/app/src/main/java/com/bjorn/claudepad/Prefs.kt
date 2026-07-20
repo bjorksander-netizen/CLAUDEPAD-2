@@ -47,6 +47,16 @@ object Prefs {
     fun hapticStrength(ctx: Context) = sp(ctx).getFloat("haptic_str", 1.0f)
     fun setHapticStrength(ctx: Context, v: Float) = sp(ctx).edit().putFloat("haptic_str", v).apply()
 
+    /** Garis bidik + koordinat jari di trackpad. Default MATI. */
+    fun pointerLocation(ctx: Context) = sp(ctx).getBoolean("pointer_loc", false)
+    fun setPointerLocation(ctx: Context, v: Boolean) =
+        sp(ctx).edit().putBoolean("pointer_loc", v).apply()
+
+    /** Lingkaran umpan balik saat menyentuh trackpad. Default NYALA. */
+    fun showTaps(ctx: Context) = sp(ctx).getBoolean("show_taps", true)
+    fun setShowTaps(ctx: Context, v: Boolean) =
+        sp(ctx).edit().putBoolean("show_taps", v).apply()
+
     fun keepAwake(ctx: Context) = sp(ctx).getBoolean("awake", true)
     fun setKeepAwake(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("awake", v).apply()
 
