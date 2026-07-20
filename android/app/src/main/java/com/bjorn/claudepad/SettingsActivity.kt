@@ -127,10 +127,6 @@ class SettingsActivity : AppCompatActivity() {
                 .show()
         }
 
-        toggleRow(R.id.rowBrightCtl, R.id.tvBrightCtl,
-            { Prefs.brightnessCtl(this) },
-            { v -> Prefs.setBrightnessCtl(this, v) })
-
         toggleRow(R.id.rowShowTaps, R.id.tvShowTaps,
             { Prefs.showTaps(this) },
             { v -> Prefs.setShowTaps(this, v) })

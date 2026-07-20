@@ -109,7 +109,7 @@ class ControlActivity : AppCompatActivity() {
                     runOnUiThread { volumeSlider.value = o.optInt("v", volumeSlider.value) }
                 }
                 "volerr" -> runOnUiThread { onVolumeError() }
-                "bright_result", "power_result" -> {
+                "power_result" -> {
                     val msg = o.optString("msg")
                     val ok = o.optBoolean("ok")
                     runOnUiThread {
@@ -349,6 +349,8 @@ class ControlActivity : AppCompatActivity() {
 
     private fun setupShortcuts() {
         tap(R.id.kWinTab, Haptics.Level.MEDIUM) { WsClient.key("tab", listOf("win")) }
+        // Ctrl+W — tutup tab / jendela aktif
+        tap(R.id.kCloseTab, Haptics.Level.MEDIUM) { WsClient.key("w", listOf("ctrl")) }
 
         // grup salin / tempel
         findViewById<TextView>(R.id.btnClipGroup).setOnClickListener { anchor ->
@@ -490,20 +492,6 @@ class ControlActivity : AppCompatActivity() {
         tap(R.id.mPlay, Haptics.Level.MEDIUM) { WsClient.media("playpause") }
         tap(R.id.mPrev) { WsClient.media("prev") }
         tap(R.id.mNext) { WsClient.media("next") }
-        tap(R.id.mMute, Haptics.Level.MEDIUM) { WsClient.media("mute") }
-        tap(R.id.mBrightUp, Haptics.Level.MEDIUM) { WsClient.brightness(10) }
-        tap(R.id.mBrightDown, Haptics.Level.MEDIUM) { WsClient.brightness(-10) }
-        applyBrightnessMode()
-    }
-
-    /**
-     * Kontrol kecerahan hanya berguna di laptop. Saat dimatikan di Setting,
-     * tempatnya diisi kembali oleh tombol mute.
-     */
-    private fun applyBrightnessMode() {
-        val on = Prefs.brightnessCtl(this)
-        findViewById<View>(R.id.brightRow).visibility = if (on) View.VISIBLE else View.GONE
-        findViewById<View>(R.id.mMute).visibility = if (on) View.GONE else View.VISIBLE
     }
 
     private fun setupDpad() {
@@ -556,7 +544,6 @@ class ControlActivity : AppCompatActivity() {
         trackpad.pointerLocation = Prefs.pointerLocation(this)
         trackpad.showTaps = Prefs.showTaps(this)
         WsClient.autoReconnect = Prefs.autoReconnect(this)
-        applyBrightnessMode()
         applyScreenOrientation()
         if (!WsClient.connected) finish()
     }

@@ -212,9 +212,6 @@ object WsClient {
     /** Nyalakan/matikan radio PC: "wifi", "bluetooth", atau "hotspot". */
     fun radio(device: String) = send(JSONObject().put("t", "radio").put("d", device))
 
-    /** Naik/turunkan kecerahan layar PC sebesar [delta] persen. */
-    fun brightness(delta: Int) = send(JSONObject().put("t", "bright").put("d", delta))
-
     /** shutdown / restart / sleep / lock / screenoff / logoff / hibernate. */
     fun power(action: String) = send(JSONObject().put("t", "power").put("a", action))
 

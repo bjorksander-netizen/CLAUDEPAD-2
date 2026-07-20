@@ -69,15 +69,6 @@ object Prefs {
     fun setAutoReconnect(ctx: Context, v: Boolean) =
         sp(ctx).edit().putBoolean("auto_reconnect", v).apply()
 
-    /**
-     * Kontrol kecerahan layar PC. Default MATI karena hanya bekerja pada
-     * laptop (layar internal); monitor eksternal umumnya menolak.
-     * Saat mati, tombol mute ditampilkan menggantikannya.
-     */
-    fun brightnessCtl(ctx: Context) = sp(ctx).getBoolean("bright_ctl", false)
-    fun setBrightnessCtl(ctx: Context, v: Boolean) =
-        sp(ctx).edit().putBoolean("bright_ctl", v).apply()
-
     fun keepAwake(ctx: Context) = sp(ctx).getBoolean("awake", true)
     fun setKeepAwake(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("awake", v).apply()
 

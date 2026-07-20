@@ -165,11 +165,9 @@ class TrackpadView @JvmOverloads constructor(
         namePaint.textSize = 15f * resources.displayMetrics.density
         hintPaint.textSize = 10f * resources.displayMetrics.density
 
-        // Teks di dalam kotak trackpad ikut berputar mengikuti rotasi input,
-        // supaya arah "atas" yang dirasakan pengguna sesuai dengan tulisannya.
-        canvas.save()
-        canvas.rotate(inputRotation.toFloat(), width / 2f, height / 2f)
-
+        // Teks TIDAK diputar: sejak v2.9 seluruh layar sudah ikut berputar
+        // mengikuti rotasi input, jadi memutar teks lagi di sini membuatnya
+        // terbaca menyamping.
         val d = resources.displayMetrics.density
         if (inputRotation != 0) {
             hintPaint.textSize = 11f * d
@@ -180,7 +178,6 @@ class TrackpadView @JvmOverloads constructor(
         canvas.drawText(deviceName, width / 2f, height / 2f, namePaint)
         canvas.drawText("1 jari gerak · 2 jari scroll/zoom · 3 jari gesture",
             width / 2f, height / 2f + 22f * d, hintPaint)
-        canvas.restore()
 
         drawFeedback(canvas, d)
     }
