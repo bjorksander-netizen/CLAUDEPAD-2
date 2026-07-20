@@ -13,6 +13,9 @@ Butuh:     pip install websockets pycaw comtypes pystray pillow
 import asyncio
 import http
 import json
+import os
+import secrets
+import socket
 import queue
 import sys
 import threading
@@ -23,12 +26,48 @@ except ImportError:
     raise SystemExit("Modul 'websockets' belum terpasang. Jalankan: pip install websockets")
 
 import input_core as core
+import system_ctl
 from input_core import (CLIENTS, LOGQ, WS_PORT, HOSTNAME, log, local_ips,
                         local_ips_detailed, enable_usb_mode, discovery_loop,
                         handle_message, volume_get, firewall_status,
                         fix_firewall)
 
-APP_VERSION = "2.8"
+APP_VERSION = "2.9"
+
+# Token perangkat tepercaya: sekali dipasangkan, HP tidak perlu mengetik PIN
+# lagi. Disimpan di samping berkas server dalam berkas teks sederhana.
+PAIR_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "paired.txt")
+
+
+def load_tokens():
+    try:
+        with open(PAIR_FILE, "r", encoding="utf-8") as f:
+            return {l.strip() for l in f if l.strip()}
+    except OSError:
+        return set()
+
+
+def save_token(token):
+    try:
+        tokens = load_tokens()
+        tokens.add(token)
+        with open(PAIR_FILE, "w", encoding="utf-8") as f:
+            f.write("\n".join(sorted(tokens)))
+        return True
+    except OSError as e:
+        log(f"[!] Gagal menyimpan token pairing: {e}")
+        return False
+
+
+def forget_tokens():
+    try:
+        if os.path.exists(PAIR_FILE):
+            os.remove(PAIR_FILE)
+        log("[i] Semua perangkat tepercaya dilupakan")
+        return True
+    except OSError:
+        return False
+
 
 ACTIVE_SOCKETS = set()
 MAIN_LOOP = None
@@ -52,6 +91,22 @@ async def handle(ws):
     peer = ws.remote_address[0] if ws.remote_address else "?"
     transport = "usb" if peer.startswith("127.") else "wifi"
     ACTIVE_SOCKETS.add(ws)
+
+    # Matikan algoritma Nagle. Tanpa ini paket gerakan kursor yang mungil
+    # ditahan menunggu paket lain, dan kursor terasa tersendat.
+    try:
+        sock = None
+        for attr in ("transport", "socket"):
+            obj = getattr(ws, attr, None)
+            if obj is not None:
+                sock = obj.get_extra_info("socket") if hasattr(obj, "get_extra_info") else obj
+                if sock is not None:
+                    break
+        if sock is not None:
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+    except Exception:
+        pass
+
     log(f"[+] Koneksi dari {peer} ({transport})")
 
     def reply(obj):
@@ -74,17 +129,33 @@ async def handle(ws):
                         }))
                         log(f"[!] {peer} ditolak: versi APK '{app_ver}' != server {APP_VERSION}")
                         continue
-                if m.get("t") == "auth" and str(m.get("pin", "")) == core.PIN:
+                token = str(m.get("token", ""))
+                by_token = bool(token) and token in load_tokens()
+                by_pin = str(m.get("pin", "")) == core.PIN
+
+                if m.get("t") == "auth" and (by_pin or by_token):
                     authed = True
                     CLIENTS[peer] = transport
+
+                    # Beri token baru saat masuk memakai PIN, supaya lain kali
+                    # HP bisa langsung tersambung tanpa mengetik PIN lagi.
+                    new_token = ""
+                    if by_pin and not by_token:
+                        new_token = secrets.token_hex(16)
+                        save_token(new_token)
+
                     await ws.send(json.dumps({
                         "t": "auth_ok",
                         "host": HOSTNAME,
                         "transport": transport,
                         "version": APP_VERSION,
                         "vol": volume_get(),
+                        "mac": system_ctl.mac_address(),
+                        "token": new_token,
                     }))
-                    log(f"[+] {peer} terautentikasi")
+                    log(f"[+] {peer} terautentikasi"
+                        + (" (token tersimpan)" if new_token else
+                           " (token tepercaya)" if by_token else ""))
                 else:
                     await ws.send(json.dumps({"t": "auth_fail", "reason": "pin"}))
                     log(f"[!] {peer} PIN salah")

@@ -24,6 +24,8 @@ else:
         WORD = ctypes.c_ushort
     wt = _StubTypes()
 
+import system_ctl
+
 WS_PORT = 8765
 DISCOVERY_PORT = 8766
 
@@ -287,6 +289,15 @@ def handle_message(m, reply):
             reply({"t": "volerr"})
     elif t == "volget":
         reply({"t": "vol", "v": volume_get()})
+    elif t == "bright":
+        ok, msg = system_ctl.brightness_step(int(m.get("d", 10)))
+        reply({"t": "bright_result", "ok": ok, "msg": msg})
+    elif t == "power":
+        act = m.get("a", "")
+        ok, msg = system_ctl.power_action(act)
+        if ok:
+            log(f"[i] Aksi daya: {act}")
+        reply({"t": "power_result", "a": act, "ok": ok, "msg": msg})
     elif t == "radio":
         which = m.get("d", "")
         ok, msg = toggle_radio(which)
