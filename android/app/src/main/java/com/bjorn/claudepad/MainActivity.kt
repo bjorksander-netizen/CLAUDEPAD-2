@@ -29,6 +29,13 @@ class MainActivity : AppCompatActivity() {
         etPin = findViewById(R.id.etPin)
         tvStatus = findViewById(R.id.tvStatus)
 
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(
+                    arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1)
+            }
+        }
         etIp.setText(Prefs.ip(this))
         etPin.setText(Prefs.pin(this))
 
@@ -81,6 +88,7 @@ class MainActivity : AppCompatActivity() {
                 tvStatus.text = msg
                 if (ok) {
                     Haptics.heavy()
+                    RemoteService.start(this)
                     startActivity(Intent(this, ControlActivity::class.java))
                 } else {
                     Haptics.light()

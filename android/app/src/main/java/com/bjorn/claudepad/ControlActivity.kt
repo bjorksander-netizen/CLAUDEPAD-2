@@ -81,6 +81,7 @@ class ControlActivity : AppCompatActivity() {
         setupMedia()
         setupDpad()
         setupTopBar()
+        buildMacroRow()
         applyAccent()
 
         Fonts.apply(findViewById(R.id.rootControl))
@@ -100,6 +101,7 @@ class ControlActivity : AppCompatActivity() {
         WsClient.onState = { ok, msg ->
             runOnUiThread {
                 tvStatus.text = if (ok) WsClient.hostName else msg
+                RemoteService.update(this)
                 if (!ok) finish()
             }
         }
@@ -147,7 +149,7 @@ class ControlActivity : AppCompatActivity() {
         }
         tvPing.visibility = View.VISIBLE
         tvPing.text = "…"
-        WsClient.onPing = { ms -> runOnUiThread { renderPing(ms) } }
+        WsClient.onPing = { ms -> runOnUiThread { renderPing(ms); RemoteService.update(this) } }
 
         pingRunning = true
         val tick = object : Runnable {
@@ -498,6 +500,36 @@ class ControlActivity : AppCompatActivity() {
         findViewById<DpadView>(R.id.dpad).onDirection = { dir -> WsClient.key(dir) }
     }
 
+    /** Susun tombol makro kustom di baris tersendiri. Sembunyi bila kosong. */
+    private fun buildMacroRow() {
+        val row = findViewById<android.widget.LinearLayout>(R.id.macroRow)
+        row.removeAllViews()
+        val list = Macros.all(this)
+        if (list.isEmpty()) {
+            row.visibility = View.GONE
+            return
+        }
+        row.visibility = View.VISIBLE
+        val d = resources.displayMetrics.density
+        for ((i, m) in list.withIndex()) {
+            val tv = TextView(this)
+            tv.text = m.label.ifEmpty { m.key.uppercase() }
+            tv.textSize = 13f
+            tv.setTextColor(getColor(R.color.text))
+            tv.gravity = android.view.Gravity.CENTER
+            tv.setBackgroundResource(R.drawable.glass_key)
+            val lp = android.widget.LinearLayout.LayoutParams(
+                0, (46 * d).toInt(), 1f)
+            if (i > 0) lp.marginStart = (6 * d).toInt()
+            tv.layoutParams = lp
+            tv.setOnClickListener {
+                Haptics.medium()
+                Macros.fire(m)
+            }
+            row.addView(tv)
+        }
+    }
+
     private fun setupTopBar() {
         val btnRotate = findViewById<TextView>(R.id.btnRotate)
         fun renderRotate() {
@@ -545,6 +577,7 @@ class ControlActivity : AppCompatActivity() {
         trackpad.showTaps = Prefs.showTaps(this)
         WsClient.autoReconnect = Prefs.autoReconnect(this)
         applyScreenOrientation()
+        buildMacroRow()
         if (!WsClient.connected) finish()
     }
 

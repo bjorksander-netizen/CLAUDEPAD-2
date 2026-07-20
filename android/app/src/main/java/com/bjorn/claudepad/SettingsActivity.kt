@@ -48,6 +48,7 @@ class SettingsActivity : AppCompatActivity() {
         bindToggles()
         bindSensitivity()
         bindPower()
+        bindMacros()
         bindPingLog()
         bindAbout()
 
@@ -113,6 +114,12 @@ class SettingsActivity : AppCompatActivity() {
             { Prefs.autoReconnect(this) },
             { v -> Prefs.setAutoReconnect(this, v); WsClient.autoReconnect = v })
 
+        findViewById<View>(R.id.rowShowNotif).setOnClickListener {
+            Haptics.medium()
+            RemoteService.start(this)
+            toast("notifikasi kontrol ditampilkan")
+        }
+
         findViewById<TextView>(R.id.tvPairState).text =
             if (Prefs.token(this).isEmpty()) "belum dipasangkan" else "tersimpan"
         findViewById<View>(R.id.rowForgetPair).setOnClickListener {
@@ -122,7 +129,13 @@ class SettingsActivity : AppCompatActivity() {
                 .setMessage("PIN akan diminta lagi saat menyambung berikutnya.")
                 .setPositiveButton("lupakan") { _, _ ->
                     Prefs.setToken(this, "")
-                    findViewById<TextView>(R.id.tvPairState).text = "belum dipasangkan"
+                    findViewById<View>(R.id.rowShowNotif).setOnClickListener {
+            Haptics.medium()
+            RemoteService.start(this)
+            toast("notifikasi kontrol ditampilkan")
+        }
+
+        findViewById<TextView>(R.id.tvPairState).text = "belum dipasangkan"
                 }
                 .setNegativeButton("batal", null)
                 .show()
@@ -308,6 +321,80 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun toast(s: String) =
         android.widget.Toast.makeText(this, s, android.widget.Toast.LENGTH_SHORT).show()
+
+    // ------------------------------------------------------------------ makro --
+    private fun bindMacros() {
+        refreshMacroCount()
+        findViewById<View>(R.id.rowMacros).setOnClickListener {
+            Haptics.medium()
+            showMacroManager()
+        }
+    }
+
+    private fun refreshMacroCount() {
+        findViewById<TextView>(R.id.tvMacroCount).text =
+            "${Macros.all(this).size}/${Macros.MAX}"
+    }
+
+    /** Daftar makro yang ada + tombol tambah/hapus. */
+    private fun showMacroManager() {
+        val list = Macros.all(this)
+        val items = list.map { "${it.label.ifEmpty { it.key }}  ·  ${it.combo()}" }
+            .toMutableList()
+        val canAdd = list.size < Macros.MAX
+        if (canAdd) items.add("+ tambah makro")
+
+        AlertDialog.Builder(this)
+            .setTitle("tombol makro (${list.size}/${Macros.MAX})")
+            .setItems(items.toTypedArray()) { _, which ->
+                if (canAdd && which == items.size - 1) {
+                    showMacroEditor()
+                } else {
+                    // ketuk makro yang ada -> tawarkan hapus
+                    AlertDialog.Builder(this)
+                        .setTitle(list[which].combo())
+                        .setMessage("Hapus makro ini?")
+                        .setPositiveButton("hapus") { _, _ ->
+                            Macros.removeAt(this, which)
+                            refreshMacroCount()
+                        }
+                        .setNegativeButton("batal", null)
+                        .show()
+                }
+            }
+            .setNegativeButton("tutup", null)
+            .show()
+    }
+
+    private fun showMacroEditor() {
+        val view = layoutInflater.inflate(R.layout.dialog_macro, null)
+        val etLabel = view.findViewById<android.widget.EditText>(R.id.etLabel)
+        val etKey = view.findViewById<android.widget.EditText>(R.id.etKey)
+        val cbCtrl = view.findViewById<android.widget.CheckBox>(R.id.cbCtrl)
+        val cbShift = view.findViewById<android.widget.CheckBox>(R.id.cbShift)
+        val cbAlt = view.findViewById<android.widget.CheckBox>(R.id.cbAlt)
+        val cbWin = view.findViewById<android.widget.CheckBox>(R.id.cbWin)
+
+        AlertDialog.Builder(this)
+            .setTitle("makro baru")
+            .setView(view)
+            .setPositiveButton("simpan") { _, _ ->
+                val key = etKey.text.toString().trim().lowercase()
+                if (key.isEmpty()) {
+                    toast("tombol utama tidak boleh kosong")
+                    return@setPositiveButton
+                }
+                val label = etLabel.text.toString().trim()
+                Macros.add(this, Macros.Macro(
+                    if (label.isEmpty()) key.uppercase() else label,
+                    key, cbCtrl.isChecked, cbShift.isChecked,
+                    cbAlt.isChecked, cbWin.isChecked))
+                refreshMacroCount()
+                toast("makro disimpan")
+            }
+            .setNegativeButton("batal", null)
+            .show()
+    }
 
     // ---------------------------------------------------------------- log ping --
     private fun bindPingLog() {
