@@ -316,3 +316,83 @@ jobs:
           echo "::error::Gagal mempublikasikan release setelah 5 percobaan."
           echo "APK tetap tersedia sebagai artefak build di halaman run ini."
           exit 1
+
+  # ============================================================
+  # Server .exe mandiri (Windows) — pengguna tak perlu Python.
+  # Dibangun di runner Windows, lalu diunggah ke release yang sama.
+  # ============================================================
+  build-server-exe:
+    needs: verify-server
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependency + PyInstaller
+        working-directory: server
+        run: |
+          python -m pip install --upgrade pip
+          pip install websockets pycaw comtypes pystray pillow pyinstaller
+
+      - name: Baca versi server
+        id: sver
+        shell: bash
+        run: |
+          V=$(grep -oP 'APP_VERSION\s*=\s*"\K[^"]+' server/pc_server.py)
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "Versi server: $V"
+
+      - name: Buat ikon
+        working-directory: server
+        run: python make_icon.py
+
+      - name: Bungkus jadi .exe (onefile)
+        working-directory: server
+        run: pyinstaller --clean --noconfirm claudepad.spec
+
+      - name: Ganti nama & cek
+        working-directory: server
+        shell: bash
+        run: |
+          V="${{ steps.sver.outputs.version }}"
+          cp dist/CLAUDEPAD-Server.exe "CLAUDEPAD-Server-v$V.exe"
+          ls -lh "CLAUDEPAD-Server-v$V.exe"
+
+      - name: Unggah artefak
+        uses: actions/upload-artifact@v4
+        with:
+          name: CLAUDEPAD-Server-exe
+          path: server/CLAUDEPAD-Server-v*.exe
+
+      - name: Publikasikan ke release (tahan gangguan API)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          V: ${{ steps.sver.outputs.version }}
+        shell: bash
+        run: |
+          FILE="server/CLAUDEPAD-Server-v$V.exe"
+          for i in 1 2 3 4 5; do
+            echo "--- percobaan unggah exe $i ---"
+            # buang .exe versi lama dari release supaya tak menumpuk
+            for OLD in $(gh release view latest --json assets \
+                           --jq '.assets[].name' 2>/dev/null | grep '\.exe$' || true); do
+              if [ "$OLD" != "CLAUDEPAD-Server-v$V.exe" ]; then
+                gh release delete-asset latest "$OLD" --yes >/dev/null 2>&1 || true
+              fi
+            done
+            if gh release view latest >/dev/null 2>&1; then
+              if gh release upload latest "$FILE" --clobber; then
+                echo "exe terunggah ke release"; exit 0
+              fi
+            else
+              echo "release belum ada, tunggu job APK membuatnya"
+            fi
+            sleep $((i * 20))
+          done
+          echo "::warning::Gagal mengunggah exe ke release; exe tetap ada sebagai artefak build."
