@@ -103,6 +103,14 @@ jobs:
                       raise AssertionError("pong tidak diterima")
                   print("OK - pesan kontrol & JSON rusak ditangani")
 
+                  # kontrol radio PC harus SELALU membalas, walau di runner Linux
+                  # perangkatnya tidak ada - klien tidak boleh menggantung
+                  for dev in ("wifi", "bluetooth", "hotspot"):
+                      await ws.send(json.dumps({"t":"radio","d":dev}))
+                      rr = json.loads(await asyncio.wait_for(ws.recv(), 20))
+                      assert rr["t"] == "radio_result" and rr["d"] == dev and "msg" in rr, rr
+                  print("OK - radio_result selalu dibalas")
+
               await asyncio.sleep(0.4)
               assert len(core.CLIENTS) == 0
               print("OK - registry klien dibersihkan")
