@@ -27,12 +27,13 @@ except ImportError:
 
 import input_core as core
 import system_ctl
+import crypto_box
 from input_core import (CLIENTS, LOGQ, WS_PORT, HOSTNAME, log, local_ips,
                         local_ips_detailed, enable_usb_mode, discovery_loop,
                         handle_message, volume_get, firewall_status,
                         fix_firewall)
 
-APP_VERSION = "2.9.3"
+APP_VERSION = "3.0"
 
 # Token perangkat tepercaya: sekali dipasangkan, HP tidak perlu mengetik PIN
 # lagi. Disimpan di samping berkas server dalam berkas teks sederhana.
@@ -88,8 +89,10 @@ def disconnect_clients():
 # ---------------------------------------------------------------- Handler ----
 async def handle(ws):
     authed = False
+    crypto = None          # Session bila klien memilih jalur terenkripsi
     peer = ws.remote_address[0] if ws.remote_address else "?"
     transport = "usb" if peer.startswith("127.") else "wifi"
+    pending_salt = [None]      # garam handshake untuk koneksi ini
     ACTIVE_SOCKETS.add(ws)
 
     # Matikan algoritma Nagle. Tanpa ini paket gerakan kursor yang mungil
@@ -110,14 +113,39 @@ async def handle(ws):
     log(f"[+] Koneksi dari {peer} ({transport})")
 
     def reply(obj):
-        asyncio.create_task(ws.send(json.dumps(obj)))
+        data = json.dumps(obj)
+        if crypto is not None:
+            asyncio.create_task(ws.send(crypto.seal(data.encode("utf-8"))))
+        else:
+            asyncio.create_task(ws.send(data))
 
     try:
         async for raw in ws:
+            # Setelah handshake, pesan datang sebagai blob biner terenkripsi.
+            if crypto is not None and isinstance(raw, (bytes, bytearray)):
+                try:
+                    raw = crypto.open(bytes(raw)).decode("utf-8")
+                except Exception as e:
+                    log(f"[!] {peer} paket ditolak: {e}")
+                    continue
             try:
                 m = json.loads(raw)
             except (ValueError, TypeError):
                 continue
+
+            # Handshake enkripsi. Klien v3.0+ meminta garam lebih dahulu.
+            # Kunci sesi TIDAK pernah dikirim: kedua pihak menurunkannya
+            # sendiri dari PIN atau token pairing yang sudah sama-sama
+            # diketahui, memakai garam ini.
+            if not authed and m.get("t") == "hello":
+                pending_salt[0] = crypto_box.new_salt()
+                await ws.send(json.dumps({
+                    "t": "hello_ok",
+                    "salt": pending_salt[0].hex(),
+                    "version": APP_VERSION,
+                }))
+                continue
+
             if not authed:
                 if m.get("t") == "auth":
                     # Kunci versi: APK dan server harus sama persis.
@@ -144,6 +172,13 @@ async def handle(ws):
                         new_token = secrets.token_hex(16)
                         save_token(new_token)
 
+                    # Kunci sesi diturunkan dari rahasia yang sudah dimiliki
+                    # kedua pihak, jadi tidak ada yang perlu dikirim.
+                    if pending_salt[0] is not None:
+                        secret = token if by_token else core.PIN
+                        crypto = crypto_box.Session.derive(secret, pending_salt[0])
+                        log(f"[+] {peer} lalu lintas terenkripsi")
+
                     await ws.send(json.dumps({
                         "t": "auth_ok",
                         "host": HOSTNAME,
@@ -152,6 +187,7 @@ async def handle(ws):
                         "vol": volume_get(),
                         "mac": system_ctl.mac_address(),
                         "token": new_token,
+                        "encrypted": pending_salt[0] is not None,
                     }))
                     log(f"[+] {peer} terautentikasi"
                         + (" (token tersimpan)" if new_token else
