@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="210dp"
-    android:layout_height="210dp"
+    android:layout_width="230dp"
+    android:layout_height="230dp"
     android:orientation="vertical"
     android:background="@drawable/glass_popup"
     android:padding="12dp">
@@ -34,7 +34,22 @@
             android:layout_weight="1" android:layout_height="match_parent"
             android:layout_marginStart="8dp" android:text="⚙"
             android:contentDescription="Ctrl+, buka pengaturan" />
-        <View android:layout_width="0dp" android:layout_weight="1"
+        <TextView android:id="@+id/kScreenOff" style="@style/KeyGlass" android:layout_width="0dp"
+            android:layout_weight="1" android:layout_height="match_parent"
+            android:layout_marginStart="8dp" android:text="◑"
+            android:contentDescription="matikan layar pc" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="horizontal"
+        android:layout_marginTop="8dp">
+        <TextView android:id="@+id/kLock" style="@style/KeyGlass" android:layout_width="0dp"
+            android:layout_weight="1" android:layout_height="match_parent"
+            android:text="⚿" android:contentDescription="kunci pc" />
+        <View android:layout_width="0dp" android:layout_weight="2"
             android:layout_height="match_parent" />
     </LinearLayout>
 </LinearLayout>

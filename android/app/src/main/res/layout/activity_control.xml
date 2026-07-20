@@ -167,8 +167,8 @@
             android:layout_marginStart="6dp" android:text="⇌" />
         <TextView android:id="@+id/btnConnGroup" style="@style/KeyGlass"
             android:layout_width="0dp" android:layout_weight="1"
-            android:layout_marginStart="6dp" android:text="📶"
-            android:textSize="15sp"
+            android:layout_marginStart="6dp" android:text="🖧"
+            android:textSize="17sp"
             android:contentDescription="kontrol koneksi pc" />
         <TextView android:id="@+id/btnAdvance" style="@style/KeyGlass"
             android:layout_width="0dp" android:layout_weight="1"
@@ -222,10 +222,27 @@
                         android:layout_marginStart="6dp" android:text="⏭" />
                 </LinearLayout>
 
-                <TextView android:id="@+id/mMute" style="@style/KeyGlass"
-                    android:layout_width="match_parent" android:layout_height="0dp"
-                    android:layout_weight="1" android:layout_marginTop="6dp"
-                    android:text="🔇" android:textSize="16sp" />
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:layout_marginTop="6dp"
+                    android:orientation="horizontal">
+                    <TextView android:id="@+id/mBrightDown" style="@style/KeyGlass"
+                        android:layout_width="0dp" android:layout_weight="1"
+                        android:layout_height="match_parent" android:text="−" />
+                    <TextView style="@style/KeyGlass"
+                        android:layout_width="0dp" android:layout_weight="1"
+                        android:layout_height="match_parent"
+                        android:layout_marginStart="4dp"
+                        android:background="@android:color/transparent"
+                        android:text="☀" android:textSize="16sp"
+                        android:clickable="false" android:focusable="false" />
+                    <TextView android:id="@+id/mBrightUp" style="@style/KeyGlass"
+                        android:layout_width="0dp" android:layout_weight="1"
+                        android:layout_height="match_parent"
+                        android:layout_marginStart="4dp" android:text="+" />
+                </LinearLayout>
             </LinearLayout>
         </LinearLayout>
 

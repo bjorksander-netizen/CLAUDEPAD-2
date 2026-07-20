@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="4dp">
+
+    <TextView android:id="@+id/pShutdown" style="@style/KeyGlass"
+        android:layout_width="match_parent" android:layout_height="52dp"
+        android:text="matikan pc" android:textSize="15sp" />
+
+    <TextView android:id="@+id/pRestart" style="@style/KeyGlass"
+        android:layout_width="match_parent" android:layout_height="52dp"
+        android:layout_marginTop="8dp"
+        android:text="mulai ulang" android:textSize="15sp" />
+
+    <TextView android:id="@+id/pSleep" style="@style/KeyGlass"
+        android:layout_width="match_parent" android:layout_height="52dp"
+        android:layout_marginTop="8dp"
+        android:text="tidurkan pc" android:textSize="15sp" />
+
+    <TextView android:id="@+id/pHibernate" style="@style/KeyGlass"
+        android:layout_width="match_parent" android:layout_height="52dp"
+        android:layout_marginTop="8dp"
+        android:text="hibernasi" android:textSize="15sp" />
+
+    <TextView android:id="@+id/pLogoff" style="@style/KeyGlass"
+        android:layout_width="match_parent" android:layout_height="52dp"
+        android:layout_marginTop="8dp"
+        android:text="keluar sesi" android:textSize="15sp" />
+</LinearLayout>
