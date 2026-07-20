@@ -100,14 +100,12 @@ keyboard muncul. Panel melebar ke atas mengikuti panjang teks, dan bertahan
 sampai keyboard ditutup. Huruf dikirim langsung ke PC saat diketik,
 termasuk backspace.
 
-### Rotasi input
+### Orientasi tampilan
 
-Tombol **⤢ / ⤡ / ⤣** memutar arah input trackpad bergiliran antara **0°, 90°,
-dan 270°**. Sejak v2.9 layar ikut berputar dan seluruh tombol memakai tata
-letak lanskap tersendiri. Pada 90°, geser ke kanan
-menggerakkan kursor ke atas; pada 270° ke bawah. Tulisan di dalam kotak
-trackpad ikut berputar mengikuti orientasi aktif. Berguna bila HP diletakkan
-menyamping.
+Tombol **⤢ / ⤡ / ⤣** memutar seluruh tampilan bergiliran antara **0°, 90°,
+dan 270°**, memakai tata letak lanskap tersendiri saat diputar. Arah gestur
+selalu mengikuti layar apa adanya — geser ke atas berarti kursor ke atas, di
+orientasi mana pun.
 
 ### Umpan balik visual trackpad
 

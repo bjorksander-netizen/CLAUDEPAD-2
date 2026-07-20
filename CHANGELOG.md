@@ -5,7 +5,8 @@ bersamaan, dan server menolak koneksi bila keduanya berbeda.
 
 | Versi | Inti perubahan |
 |---|---|
-| **v2.9.2** | Bar atas lanskap diperbaiki; kecerahan & mute mandiri dihapus; Ctrl+W |
+| **v2.9.3** | Arah kursor melenceng 90° saat lanskap diperbaiki |
+| v2.9.2 | Bar atas lanskap diperbaiki; kecerahan & mute mandiri dihapus; Ctrl+W |
 | v2.9.1 | Perbaikan layout lanskap & tombol Enter; kecerahan jadi opsional |
 | v2.9 | Perbaikan kursor patah-patah; layout lanskap; kecerahan & daya PC; pairing; auto-reconnect |
 | v2.8 | D-Pad kembali ke bentuk salib; tombol digabung jadi grup pop-up; kontrol koneksi PC; log ping |
@@ -19,6 +20,24 @@ bersamaan, dan server menolak koneksi bila keduanya berbeda.
 | v1.0 | Rilis pertama |
 
 ---
+
+## v2.9.3
+
+### Perbaikan
+- **Arah kursor melenceng 90° pada mode lanskap.** Geser ke atas membuat
+  kursor bergerak menyamping, geser ke kanan membuatnya naik, dan seterusnya.
+
+  Penyebabnya: fitur rotasi input dibuat pada v2.1, ketika layar tetap potret
+  meski HP dimiringkan — saat itu arah gerakan memang perlu diputar sendiri
+  oleh aplikasi. Sejak v2.9 seluruh layar ikut berputar, dan Android sudah
+  memutar koordinat sentuhan mengikuti orientasi layar. Aplikasi tetap
+  memutarnya sekali lagi, sehingga totalnya berputar dua kali.
+
+  Transformasi arah di aplikasi kini dihapus sepenuhnya. Gerakan kursor,
+  scroll dua jari, dan gestur tiga jari semuanya memakai koordinat layar apa
+  adanya — geser ke atas berarti kursor ke atas, di orientasi mana pun.
+- Tombol orientasi kini murni memutar **tampilan**; namanya di Setting diubah
+  menjadi "orientasi tampilan" agar tidak menyesatkan.
 
 ## v2.9.2
 
