@@ -143,6 +143,32 @@
                 android:progress="100" />
         </LinearLayout>
 
+        <!-- ==== Log ping ==== -->
+        <TextView style="@style/SectionLabel" android:text="LOG PING" />
+
+        <LinearLayout style="@style/SettingCard">
+            <LinearLayout style="@style/RowItem">
+                <TextView style="@style/RowTitle" android:text="rekaman" />
+                <TextView android:id="@+id/tvPingLog" style="@style/RowValue"
+                    android:text="belum ada data" />
+            </LinearLayout>
+            <View style="@style/Divider" />
+            <LinearLayout android:id="@+id/rowPingView" style="@style/RowItem">
+                <TextView style="@style/RowTitle" android:text="lihat laporan" />
+                <TextView style="@style/RowValue" android:text="›" />
+            </LinearLayout>
+            <View style="@style/Divider" />
+            <LinearLayout android:id="@+id/rowPingShare" style="@style/RowItem">
+                <TextView style="@style/RowTitle" android:text="simpan &amp; bagikan" />
+                <TextView style="@style/RowValue" android:text="↗" />
+            </LinearLayout>
+            <View style="@style/Divider" />
+            <LinearLayout android:id="@+id/rowPingClear" style="@style/RowItem">
+                <TextView style="@style/RowTitle" android:text="hapus rekaman" />
+                <TextView style="@style/RowValue" android:text="✕" />
+            </LinearLayout>
+        </LinearLayout>
+
         <!-- ==== Tentang ==== -->
         <TextView style="@style/SectionLabel" android:text="TENTANG" />
 

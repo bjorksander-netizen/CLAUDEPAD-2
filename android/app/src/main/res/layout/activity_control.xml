@@ -155,11 +155,24 @@
         android:orientation="horizontal"
         android:layout_marginTop="6dp">
 
-        <TextView android:id="@+id/kCopy"   style="@style/KeyGlass" android:layout_width="0dp" android:layout_weight="1" android:text="⧉" />
-        <TextView android:id="@+id/kPaste"  style="@style/KeyGlass" android:layout_width="0dp" android:layout_weight="1" android:layout_marginStart="6dp" android:text="⎘" />
-        <TextView android:id="@+id/kUndo"   style="@style/KeyGlass" android:layout_width="0dp" android:layout_weight="1" android:layout_marginStart="6dp" android:text="↩" />
-        <TextView android:id="@+id/kWinTab" style="@style/KeyGlass" android:layout_width="0dp" android:layout_weight="1" android:layout_marginStart="6dp" android:text="⇌" />
-        <TextView android:id="@+id/btnAdvance" style="@style/KeyGlass" android:layout_width="0dp" android:layout_weight="1" android:layout_marginStart="6dp" android:text="⋯" />
+        <TextView android:id="@+id/btnClipGroup" style="@style/KeyGlass"
+            android:layout_width="0dp" android:layout_weight="1" android:text="⧉"
+            android:contentDescription="salin dan tempel" />
+        <TextView android:id="@+id/btnUndoGroup" style="@style/KeyGlass"
+            android:layout_width="0dp" android:layout_weight="1"
+            android:layout_marginStart="6dp" android:text="↩"
+            android:contentDescription="urungkan dan ulangi" />
+        <TextView android:id="@+id/kWinTab" style="@style/KeyGlass"
+            android:layout_width="0dp" android:layout_weight="1"
+            android:layout_marginStart="6dp" android:text="⇌" />
+        <TextView android:id="@+id/btnConnGroup" style="@style/KeyGlass"
+            android:layout_width="0dp" android:layout_weight="1"
+            android:layout_marginStart="6dp" android:text="📶"
+            android:textSize="15sp"
+            android:contentDescription="kontrol koneksi pc" />
+        <TextView android:id="@+id/btnAdvance" style="@style/KeyGlass"
+            android:layout_width="0dp" android:layout_weight="1"
+            android:layout_marginStart="6dp" android:text="⋯" />
     </LinearLayout>
 
     <!-- ============ Baris bawah: 2 kolom seimbang (tinggi TETAP agar
