@@ -90,6 +90,14 @@ class ControlActivity : AppCompatActivity() {
                     runOnUiThread { volumeSlider.value = o.optInt("v", volumeSlider.value) }
                 }
                 "volerr" -> runOnUiThread { onVolumeError() }
+                "radio_result" -> {
+                    val msg = o.optString("msg")
+                    val ok = o.optBoolean("ok")
+                    runOnUiThread {
+                        if (ok) Haptics.heavy() else Haptics.light()
+                        Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+                    }
+                }
             }
         }
         val host = WsClient.hostName
@@ -303,43 +311,94 @@ class ControlActivity : AppCompatActivity() {
     }
 
     private fun setupShortcuts() {
-        tap(R.id.kCopy, Haptics.Level.MEDIUM) { WsClient.key("c", listOf("ctrl")) }
-        tap(R.id.kPaste, Haptics.Level.MEDIUM) { WsClient.key("v", listOf("ctrl")) }
-        tap(R.id.kUndo, Haptics.Level.MEDIUM) { WsClient.key("z", listOf("ctrl")) }
         tap(R.id.kWinTab, Haptics.Level.MEDIUM) { WsClient.key("tab", listOf("win")) }
-        findViewById<TextView>(R.id.btnAdvance).setOnClickListener {
+
+        // grup salin / tempel
+        findViewById<TextView>(R.id.btnClipGroup).setOnClickListener { anchor ->
             Haptics.medium()
-            toggleAdvancePopup(it)
+            showGroupPopup(anchor, R.layout.popup_clip, 200, 0) { root, pop ->
+                bindKey(root, pop, R.id.kCopy) { WsClient.key("c", listOf("ctrl")) }
+                bindKey(root, pop, R.id.kPaste) { WsClient.key("v", listOf("ctrl")) }
+            }
+        }
+
+        // grup urungkan / ulangi
+        findViewById<TextView>(R.id.btnUndoGroup).setOnClickListener { anchor ->
+            Haptics.medium()
+            showGroupPopup(anchor, R.layout.popup_undo, 200, 0) { root, pop ->
+                bindKey(root, pop, R.id.kUndo) { WsClient.key("z", listOf("ctrl")) }
+                // Ctrl+Y dipakai Office/Notepad, Ctrl+Shift+Z dipakai peramban &
+                // aplikasi desain. Keduanya dikirim agar redo bekerja luas.
+                bindKey(root, pop, R.id.kRedo) {
+                    WsClient.key("y", listOf("ctrl"))
+                }
+            }
+        }
+
+        // grup kontrol koneksi PC
+        findViewById<TextView>(R.id.btnConnGroup).setOnClickListener { anchor ->
+            Haptics.medium()
+            showGroupPopup(anchor, R.layout.popup_conn, 215, 0) { root, pop ->
+                bindKey(root, pop, R.id.kWifi, close = true) { WsClient.radio("wifi") }
+                bindKey(root, pop, R.id.kBluetooth, close = true) { WsClient.radio("bluetooth") }
+                bindKey(root, pop, R.id.kHotspot, close = true) { WsClient.radio("hotspot") }
+            }
+        }
+
+        // panel Advance
+        findViewById<TextView>(R.id.btnAdvance).setOnClickListener { anchor ->
+            Haptics.medium()
+            showGroupPopup(anchor, R.layout.popup_advance, 210, 210) { root, pop ->
+                bindKey(root, pop, R.id.kEsc) { WsClient.key("esc") }
+                bindKey(root, pop, R.id.kTab) { WsClient.key("tab") }
+                bindKey(root, pop, R.id.kWin) { WsClient.key("win") }
+                bindKey(root, pop, R.id.kDel) { WsClient.key("delete") }
+                bindKey(root, pop, R.id.kSettings) { WsClient.key(",", listOf("ctrl")) }
+            }
         }
     }
 
-    /** Panel Advance: pop-up persegi berisi esc / tab / win / del. */
-    private fun toggleAdvancePopup(anchor: View) {
+    /**
+     * Pop-up grup tombol yang muncul di atas tombol pemanggilnya.
+     * Dipakai oleh panel Advance, salin/tempel, urung/ulang, dan kontrol koneksi.
+     */
+    private fun showGroupPopup(
+        anchor: View,
+        layoutRes: Int,
+        widthDp: Int,
+        heightDp: Int,
+        bind: (View, PopupWindow) -> Unit
+    ) {
         advancePopup?.let {
             if (it.isShowing) { it.dismiss(); advancePopup = null; return }
         }
-        val content = LayoutInflater.from(this).inflate(R.layout.popup_advance, null)
+        val d = resources.displayMetrics.density
+        val content = LayoutInflater.from(this).inflate(layoutRes, null)
         Fonts.apply(content)
-        val popup = PopupWindow(content,
-            (210 * resources.displayMetrics.density).toInt(),
-            (210 * resources.displayMetrics.density).toInt(),
-            true)
+
+        val h = if (heightDp > 0) (heightDp * d).toInt()
+                else WindowManager.LayoutParams.WRAP_CONTENT
+        val popup = PopupWindow(content, (widthDp * d).toInt(), h, true)
         popup.elevation = 24f
-        fun bind(id: Int, action: () -> Unit) {
-            content.findViewById<View>(id).setOnClickListener {
-                Haptics.medium(); action()
-            }
-        }
-        bind(R.id.kEsc) { WsClient.key("esc") }
-        bind(R.id.kTab) { WsClient.key("tab") }
-        bind(R.id.kWin) { WsClient.key("win") }
-        bind(R.id.kDel) { WsClient.key("delete") }
-        // Ctrl+, — pintasan buka pengaturan di banyak aplikasi Windows
-        bind(R.id.kSettings) { WsClient.key(",", listOf("ctrl")) }
+        bind(content, popup)
         popup.setOnDismissListener { advancePopup = null }
-        popup.showAsDropDown(anchor, 0,
-            (-260 * resources.displayMetrics.density).toInt())
+
+        // ukur agar pop-up muncul tepat DI ATAS tombol pemanggil
+        content.measure(
+            View.MeasureSpec.makeMeasureSpec((widthDp * d).toInt(), View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+        val popHeight = if (heightDp > 0) (heightDp * d).toInt() else content.measuredHeight
+        popup.showAsDropDown(anchor, 0, -(popHeight + anchor.height + (8 * d).toInt()))
         advancePopup = popup
+    }
+
+    private fun bindKey(root: View, popup: PopupWindow, id: Int,
+                        close: Boolean = false, action: () -> Unit) {
+        root.findViewById<View>(id)?.setOnClickListener {
+            Haptics.medium()
+            action()
+            if (close) popup.dismiss()
+        }
     }
 
     // ---------------------------------------------------------------- volume --

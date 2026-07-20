@@ -2,6 +2,8 @@ package com.bjorn.claudepad
 
 import android.content.Intent
 import android.net.Uri
+import androidx.core.content.FileProvider
+import java.io.File
 import android.os.Bundle
 import android.view.View
 import android.widget.SeekBar
@@ -84,6 +86,7 @@ class SettingsActivity : AppCompatActivity() {
         bindConnectionInfo()
         bindToggles()
         bindSensitivity()
+        bindPingLog()
         bindAbout()
 
         findViewById<TextView>(R.id.btnBack).setOnClickListener {
@@ -228,6 +231,66 @@ class SettingsActivity : AppCompatActivity() {
             override fun onStartTrackingTouch(sb: SeekBar?) {}
             override fun onStopTrackingTouch(sb: SeekBar?) {}
         })
+    }
+
+    // ---------------------------------------------------------------- log ping --
+    private fun bindPingLog() {
+        findViewById<TextView>(R.id.tvPingLog).text = PingLog.summary()
+
+        findViewById<View>(R.id.rowPingView).setOnClickListener {
+            Haptics.light()
+            showText("laporan ping", PingLog.report(this))
+        }
+
+        findViewById<View>(R.id.rowPingShare).setOnClickListener {
+            Haptics.medium()
+            sharePingLog()
+        }
+
+        findViewById<View>(R.id.rowPingClear).setOnClickListener {
+            Haptics.medium()
+            AlertDialog.Builder(this)
+                .setTitle("hapus rekaman")
+                .setMessage("Semua data ping yang tersimpan akan dihapus.")
+                .setPositiveButton("hapus") { _, _ ->
+                    PingLog.clear()
+                    findViewById<TextView>(R.id.tvPingLog).text = PingLog.summary()
+                }
+                .setNegativeButton("batal", null)
+                .show()
+        }
+    }
+
+    /** Simpan laporan sebagai berkas teks lalu buka lembar berbagi Android. */
+    private fun sharePingLog() {
+        if (PingLog.size() == 0) {
+            android.widget.Toast.makeText(this,
+                "belum ada data ping — hubungkan lewat wifi dulu",
+                android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        try {
+            val dir = File(cacheDir, "logs").apply { mkdirs() }
+            val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
+                .format(java.util.Date())
+            val file = File(dir, "claudepad-ping-$stamp.txt")
+            file.writeText(PingLog.report(this))
+
+            val uri = FileProvider.getUriForFile(
+                this, "$packageName.fileprovider", file)
+
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_SUBJECT, "CLAUDEPAD — log ping")
+                putExtra(Intent.EXTRA_TEXT, PingLog.summary())
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            // Pengguna memilih sendiri tujuan berbagi lewat lembar bawaan Android
+            startActivity(Intent.createChooser(send, "bagikan log ping"))
+        } catch (e: Exception) {
+            showText("gagal membagikan", "Tidak bisa menyimpan berkas log.\n\n${e.message}")
+        }
     }
 
     private fun bindAbout() {

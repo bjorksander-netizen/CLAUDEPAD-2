@@ -88,6 +88,7 @@ object WsClient {
                             pingMs = (System.currentTimeMillis() - pingSentAt).toInt()
                                 .coerceAtMost(9999)
                             pingSentAt = 0L
+                            PingLog.record(pingMs, transport, hostName)
                             onPing?.invoke(pingMs)
                         }
                     }
@@ -148,6 +149,9 @@ object WsClient {
     }
 
     fun media(a: String) = send(JSONObject().put("t", "media").put("a", a))
+
+    /** Nyalakan/matikan radio PC: "wifi", "bluetooth", atau "hotspot". */
+    fun radio(device: String) = send(JSONObject().put("t", "radio").put("d", device))
 
     fun volSet(v: Int) = send(JSONObject().put("t", "volset").put("v", v))
     fun volGet() = send("volget")
