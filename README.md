@@ -15,6 +15,14 @@ di belakangnya, warna aksen mengikuti wallpaper, dan font monospace.
 
 ## 1. Menyiapkan PC
 
+**Cara termudah (tanpa Python):** unduh **CLAUDEPAD-Server.exe** dari
+[Releases](../../releases/tag/latest), dobel-klik. Python dan semua dependensi
+sudah terbungkus di dalamnya. Setujui prompt Administrator saat firewall
+diminta, dan (bila muncul) klik "Run anyway" pada peringatan SmartScreen —
+wajar untuk aplikasi tak bersertifikat.
+
+**Cara lama (untuk yang mau mengoprek kode):**
+
 1. Install **Python 3** dari [python.org](https://python.org) — centang **Add Python to PATH**.
 2. Dobel-klik **`server/start_server.bat`**.
    - Saat pertama kali, Windows meminta izin **Administrator** untuk membuka

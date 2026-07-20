@@ -5,7 +5,8 @@ bersamaan, dan server menolak koneksi bila keduanya berbeda.
 
 | Versi | Inti perubahan |
 |---|---|
-| **v3.0** | Notifikasi kontrol persisten · tombol makro kustom · enkripsi lalu lintas |
+| **v3.1** | Server .exe mandiri — tidak perlu install Python |
+| v3.0 | Notifikasi kontrol persisten · tombol makro kustom · enkripsi lalu lintas |
 | v2.9.3 | Arah kursor melenceng 90° saat lanskap diperbaiki |
 | v2.9.2 | Bar atas lanskap diperbaiki; kecerahan & mute mandiri dihapus; Ctrl+W |
 | v2.9.1 | Perbaikan layout lanskap & tombol Enter; kecerahan jadi opsional |
@@ -21,6 +22,26 @@ bersamaan, dan server menolak koneksi bila keduanya berbeda.
 | v1.0 | Rilis pertama |
 
 ---
+
+## v3.1
+
+### Server .exe mandiri
+- PC tujuan **tidak perlu memasang Python**. Cukup unduh
+  **CLAUDEPAD-Server.exe** dari Releases, dobel-klik, selesai. Python dan
+  semua dependensi (websockets, pycaw, pystray) ikut terbungkus di dalamnya.
+- Dibangun otomatis di runner Windows GitHub Actions dan terbit berdampingan
+  dengan APK setiap rilis — tidak perlu Python bahkan untuk membuatnya.
+- Berjalan tanpa jendela konsol, memakai ikon CLAUDEPAD.
+- Path berkas disesuaikan agar tetap benar di dalam .exe: aturan firewall
+  dibaca dari bundel, sedangkan token pairing disimpan di sebelah .exe supaya
+  bertahan antar sesi.
+- Jalur lama tetap ada: yang ingin mengoprek kode bisa memakai
+  `start_server.bat` + Python seperti biasa.
+
+**Catatan jujur:** .exe hasil PyInstaller kadang ditandai mencurigakan oleh
+antivirus, dan Windows SmartScreen mungkin menampilkan "Unknown publisher"
+saat pertama dijalankan — ini umum untuk aplikasi tak bersertifikat berbayar,
+bukan tanda masalah pada kodenya.
 
 ## v3.0
 
