@@ -68,12 +68,16 @@ Mengikuti standar **Windows Precision Touchpad**:
 
 | | | | | |
 |---|---|---|---|---|
-| ◐ | klik kiri | | ⧉ | salin (Ctrl+C) |
-| ⊙ | klik tengah | | ⎘ | tempel (Ctrl+V) |
-| ◑ | klik kanan | | ↩ | urungkan (Ctrl+Z) |
-| ⏎ | Enter | | ⇌ | Win+Tab |
+| ◐ | klik kiri | | ⧉ | grup salin & tempel |
+| ⊙ | klik tengah | | ↩ | grup urungkan & ulangi |
+| ◑ | klik kanan | | ⇌ | Win+Tab |
+| ⏎ | Enter | | 📶 | grup koneksi PC |
 | ⋯ | panel Advance | | ⚙ | setting |
 | ⤢ ⤡ ⤣ | rotasi input 0° / 90° / 270° | | ⏻ | putuskan koneksi |
+
+Tombol bertanda **grup** membuka pop-up kecil di atasnya:
+**⧉** berisi `copy` dan `paste`, **↩** berisi `undo` dan `redo`, dan
+**📶** berisi `wifi`, `bluetooth`, serta `hotspot` untuk PC.
 
 Panel **Advance** (⋯) muncul sebagai pop-up berisi `esc` · `⇥` Tab · `❖` Win ·
 `⌦` Delete · `⚙` Ctrl+, (buka pengaturan).
@@ -103,11 +107,24 @@ menyamping.
 sedangkan **pointer location** menambahkan garis bidik dan koordinat setiap
 jari (default mati). Keduanya diatur di ⚙ Setting.
 
-### Indikator ping
+### Indikator & log ping
 
 Saat memakai WiFi/Hotspot, latensi tampil di samping nama PC dan berganti
 warna mengikuti kualitas koneksi — hijau berarti responsif, merah berarti
 lambat.
+
+Setiap pengukuran juga direkam. Di **⚙ Setting → LOG PING** kamu bisa melihat
+laporan lengkap (rata-rata, median, jitter, jumlah sampel lambat), lalu
+menyimpannya sebagai berkas teks dan membagikannya lewat lembar berbagi
+Android ke aplikasi mana pun.
+
+### Kontrol koneksi PC
+
+Tombol **📶** menyalakan atau mematikan **WiFi**, **Bluetooth**, dan
+**hotspot** di PC. WiFi dan Bluetooth memakai Windows Radio Management API
+sehingga tidak butuh hak Administrator. Hotspot memakai WinRT tethering dan
+memerlukan koneksi internet aktif di PC — bila tidak didukung, alasannya
+ditampilkan di HP.
 
 ## Setting
 

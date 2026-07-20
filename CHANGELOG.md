@@ -5,7 +5,8 @@ bersamaan, dan server menolak koneksi bila keduanya berbeda.
 
 | Versi | Inti perubahan |
 |---|---|
-| **v2.6** | Panel ketik terkunci di tengah; D-Pad bundar faset; pointer location & show taps |
+| **v2.8** | D-Pad kembali ke bentuk salib; tombol digabung jadi grup pop-up; kontrol koneksi PC; log ping |
+| v2.6 | Panel ketik terkunci di tengah; D-Pad bundar faset; pointer location & show taps |
 | v2.5 | Panel ketik pop-up dengan latar blur; indikator ping; rotasi input 3 arah |
 | v2.4 | Perbaikan fatal HTTP 500 di semua koneksi; firewall benar; logo aplikasi |
 | v2.3 | Koneksi WiFi/Hotspot: adapter virtual disaring, socket diikat ke interface hotspot; mode diagnosa |
@@ -15,6 +16,29 @@ bersamaan, dan server menolak koneksi bila keduanya berbeda.
 | v1.0 | Rilis pertama |
 
 ---
+
+## v2.8
+
+### Revisi
+- **D-Pad dikembalikan** ke bentuk salib seperti sebelumnya. Sorot arah yang
+  ditekan tetap memakai warna aksen yang mengikuti wallpaper.
+- **Salin & tempel digabung** menjadi satu tombol grup yang membuka pop-up
+  berisi tombol `copy` dan `paste`.
+- **Win+Tab dipindah** ke posisi tombol urungkan sebelumnya.
+
+### Fitur baru
+- **Grup urungkan & ulangi** — tombol undo dan redo dalam satu pop-up,
+  menempati posisi tombol tempel sebelumnya. Redo dikirim sebagai Ctrl+Y.
+- **Kontrol koneksi PC** — satu tombol grup membuka pop-up berisi wifi,
+  bluetooth, dan hotspot, menempati posisi tombol Win+Tab sebelumnya.
+  WiFi dan Bluetooth memakai Windows Radio Management API sehingga
+  **tidak memerlukan hak Administrator**; hotspot memakai WinRT tethering.
+  Setiap hasil dilaporkan kembali ke HP, termasuk alasan bila gagal.
+- **Log ping** — latensi direkam otomatis saat memakai WiFi (maksimum 600
+  sampel). Di halaman setting tersedia ringkasan, laporan lengkap dengan
+  rata-rata, median, jitter dan jumlah sampel lambat, serta tombol
+  **simpan & bagikan** yang menulis berkas teks lalu membuka lembar berbagi
+  Android sehingga tujuannya bisa kamu pilih sendiri.
 
 ## v2.6
 
