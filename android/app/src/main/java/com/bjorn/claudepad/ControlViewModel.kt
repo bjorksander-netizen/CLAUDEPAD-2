@@ -152,6 +152,7 @@ class ControlViewModel(application: Application) : AndroidViewModel(application)
 
     fun radio(device: String) = repo.radio(device)
     fun power(action: String) = repo.power(action)
+    fun measurePing() = repo.measurePing()
 
     // ──────────────────────────── Connection commands ────────────────────
 

@@ -29,6 +29,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     /** Atur auto-reconnect. */
     fun setAutoReconnect(enabled: Boolean) = repo.setAutoReconnect(enabled)
 
+    /** Kirim aksi daya ke PC. */
+    fun power(action: String) = repo.power(action)
+
     /** Simpan token. */
     fun clearToken() {
         val context = getApplication<Application>()
