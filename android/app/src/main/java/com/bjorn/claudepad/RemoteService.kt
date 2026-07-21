@@ -152,8 +152,8 @@ class RemoteService : Service() {
         collapsed.setTextViewText(R.id.nHost, host)
         expanded.setTextViewText(R.id.nHost, host)
 
-        val ping = if (WsClient.transport == "wifi" && WsClient.pingMs >= 0)
-            " · ${WsClient.pingMs}ms" else ""
+        val ping = if (WsClient.transport == "wifi" && WsClient.pingMs.value >= 0)
+            " · ${WsClient.pingMs.value}ms" else ""
         expanded.setTextViewText(R.id.nInfo, "via ${WsClient.transport}$ping")
 
         for (rv in arrayOf(collapsed, expanded)) {

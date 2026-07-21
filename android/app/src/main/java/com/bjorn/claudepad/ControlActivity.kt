@@ -24,21 +24,32 @@ import android.widget.EditText
 import android.widget.PopupWindow
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.launch
 
+/**
+ * Layar kendali utama: trackpad, tombol mouse, keyboard, volume, media.
+ *
+ * Arsitektur:
+ * - Semua state ada di [ControlViewModel].
+ * - Activity hanya mengikat UI ke state dan menangani gesture.
+ * - TrackpadView listener memanggil WsClient langsung untuk performa
+ *   (MoveSender butuh Choreographer frame callback, tidak boleh terdelay).
+ */
 class ControlActivity : AppCompatActivity() {
+
+    private val vm: ControlViewModel by viewModels()
 
     private lateinit var tvStatus: TextView
     private lateinit var trackpad: TrackpadView
     private lateinit var volumeSlider: VolumeSlider
-    private var suppressWatcher = false
     private var advancePopup: PopupWindow? = null
 
-    // fallback volume: kalau server tidak punya pycaw, pakai tombol media
-    private var absVolume = true
-    private var volErrToasted = false
-    private var lastVolSent = -1
-    private var lastVolTime = 0L
+    // ──────────────────────────── Lifecycle ──────────────────────────────
 
     /** Layar ikut berputar mengikuti orientasi input trackpad. */
     private fun applyScreenOrientation() {
@@ -65,14 +76,7 @@ class ControlActivity : AppCompatActivity() {
         volumeSlider = findViewById(R.id.volumeSlider)
 
         WifiPerf.acquire(this)
-        WsClient.autoReconnect = Prefs.autoReconnect(this)
-        WsClient.onNewToken = { t -> Prefs.setToken(this, t) }
-        WsClient.onReconnecting = { n ->
-            runOnUiThread { tvStatus.text = "menyambung ulang… ($n/5)" }
-        }
-        if (WsClient.macAddress.isNotEmpty()) Prefs.setMac(this, WsClient.macAddress)
 
-        setupConnectionCallbacks()
         setupTrackpad()
         setupMouseButtons()
         setupKeyboard()
@@ -85,9 +89,94 @@ class ControlActivity : AppCompatActivity() {
         applyAccent()
 
         Fonts.apply(findViewById(R.id.rootControl))
+
+        // ─── Observe state dari ViewModel ───
+        observeState()
+
+        // Legacy callbacks untuk RemoteService (masih diperlukan)
+        WsClient.onReconnecting = { n ->
+            runOnUiThread { tvStatus.text = "menyambung ulang… ($n/5)" }
+        }
     }
 
-    // ---------------------------------------------------------------- visual --
+    // ──────────────────────────── State observation ──────────────────────
+
+    private fun observeState() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                // ─── Connection state ───
+                launch {
+                    vm.connectionState.collect { state ->
+                        when (state) {
+                            is WsClient.ConnectionState.Connected -> {
+                                val info = vm.connectionInfo.value
+                                tvStatus.text = "${info.hostName} · ${info.transport}"
+                                trackpad.deviceName = info.hostName
+                                RemoteService.update(this@ControlActivity)
+                            }
+                            is WsClient.ConnectionState.Error -> {
+                                tvStatus.text = state.message
+                                RemoteService.update(this@ControlActivity)
+                                finish()
+                            }
+                            is WsClient.ConnectionState.Disconnected -> {
+                                finish()
+                            }
+                            is WsClient.ConnectionState.Connecting -> {
+                                tvStatus.text = "menyambung…"
+                            }
+                        }
+                    }
+                }
+
+                // ─── Ping ───
+                launch {
+                    vm.pingMs.collect { ms ->
+                        if (ms >= 0) {
+                            renderPing(ms)
+                            RemoteService.update(this@ControlActivity)
+                        }
+                    }
+                }
+
+                // ─── Volume ───
+                launch {
+                    vm.volume.collect { v ->
+                        if (volumeSlider.value != v) {
+                            volumeSlider.value = v
+                        }
+                    }
+                }
+
+                // ─── Toast messages (power_result, radio_result) ───
+                launch {
+                    vm.toastMessage.collect { msg ->
+                        if (msg != null) {
+                            if (vm.toastHapticOk.value) Haptics.medium() else Haptics.light()
+                            Toast.makeText(this@ControlActivity, msg,
+                                if (msg.length > 40) Toast.LENGTH_LONG else Toast.LENGTH_SHORT
+                            ).show()
+                            vm.onToastShown()
+                        }
+                    }
+                }
+
+                // ─── Volume error ───
+                launch {
+                    vm.volumeError.collect { msg ->
+                        if (msg != null) {
+                            Toast.makeText(this@ControlActivity, msg,
+                                Toast.LENGTH_LONG).show()
+                            vm.onVolumeErrorShown()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ──────────────────────────── Visual ─────────────────────────────────
+
     /** Warna aksen mengikuti wallpaper. */
     private fun applyAccent() {
         Accent.refresh()
@@ -96,46 +185,8 @@ class ControlActivity : AppCompatActivity() {
         findViewById<DpadView>(R.id.dpad).accentColor = Accent.bg(this)
     }
 
-    // ---------------------------------------------------------------- setup --
-    private fun setupConnectionCallbacks() {
-        WsClient.onState = { ok, msg ->
-            runOnUiThread {
-                tvStatus.text = if (ok) WsClient.hostName else msg
-                RemoteService.update(this)
-                if (!ok) finish()
-            }
-        }
-        WsClient.onMessage = { o ->
-            when (o.optString("t")) {
-                "vol" -> if (!o.isNull("v")) {
-                    runOnUiThread { volumeSlider.value = o.optInt("v", volumeSlider.value) }
-                }
-                "volerr" -> runOnUiThread { onVolumeError() }
-                "power_result" -> {
-                    val msg = o.optString("msg")
-                    val ok = o.optBoolean("ok")
-                    runOnUiThread {
-                        if (ok) Haptics.medium() else Haptics.light()
-                        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
-                    }
-                }
-                "radio_result" -> {
-                    val msg = o.optString("msg")
-                    val ok = o.optBoolean("ok")
-                    runOnUiThread {
-                        if (ok) Haptics.heavy() else Haptics.light()
-                        Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
-                    }
-                }
-            }
-        }
-        val host = WsClient.hostName
-        tvStatus.text = "$host · ${WsClient.transport}"
-        trackpad.deviceName = host
-        setupPing()
-    }
+    // ──────────────────────────── Ping ───────────────────────────────────
 
-    // ---------------------------------------------------------------- ping ---
     private val pingHandler = Handler(Looper.getMainLooper())
     private lateinit var tvPing: TextView
     private var pingRunning = false
@@ -143,19 +194,18 @@ class ControlActivity : AppCompatActivity() {
     /** Indikator latensi, hanya untuk koneksi WiFi/Hotspot. */
     private fun setupPing() {
         tvPing = findViewById(R.id.tvPing)
-        if (WsClient.transport != "wifi") {
+        if (vm.transport != "wifi") {
             tvPing.visibility = View.GONE
             return
         }
         tvPing.visibility = View.VISIBLE
         tvPing.text = "…"
-        WsClient.onPing = { ms -> runOnUiThread { renderPing(ms); RemoteService.update(this) } }
 
         pingRunning = true
         val tick = object : Runnable {
             override fun run() {
-                if (!pingRunning || !WsClient.connected) return
-                WsClient.measurePing()
+                if (!pingRunning || !vm.isConnected) return
+                vm.measurePing()
                 pingHandler.postDelayed(this, 2000)
             }
         }
@@ -164,16 +214,17 @@ class ControlActivity : AppCompatActivity() {
 
     private fun renderPing(ms: Int) {
         tvPing.text = "${ms}ms"
-        // warna mengikuti kualitas koneksi
         val color = when {
-            ms < 40 -> 0xFF4ADE80.toInt()   // hijau  - sangat baik
+            ms < 40 -> 0xFF4ADE80.toInt()   // hijau - sangat baik
             ms < 90 -> 0xFFA3E635.toInt()   // hijau kekuningan - baik
             ms < 180 -> 0xFFFBBF24.toInt()  // kuning - cukup
             ms < 350 -> 0xFFFB923C.toInt()  // jingga - lambat
-            else -> 0xFFFF6B6B.toInt()      // merah  - buruk
+            else -> 0xFFFF6B6B.toInt()      // merah - buruk
         }
         tvPing.setTextColor(color)
     }
+
+    // ──────────────────────────── Trackpad ───────────────────────────────
 
     private fun setupTrackpad() {
         trackpad.sensitivity = Prefs.sensitivity(this)
@@ -181,25 +232,28 @@ class ControlActivity : AppCompatActivity() {
         trackpad.inputRotation = Prefs.inputRotation(this)
         trackpad.pointerLocation = Prefs.pointerLocation(this)
         trackpad.showTaps = Prefs.showTaps(this)
+
+        // Trackpad listener memanggil WsClient langsung untuk performa.
+        // MoveSender membutuhkan Choreographer frame callback tanpa delay.
         trackpad.listener = object : TrackpadView.Listener {
-            // Gerakan digabung per frame oleh MoveSender, bukan dikirim
-            // satu paket per event sentuhan.
             override fun onMove(dx: Int, dy: Int) =
                 MoveSender.move(dx.toFloat(), dy.toFloat())
-            override fun onLeftClick() = WsClient.click("left")
-            override fun onRightClick() = WsClient.click("right")
-            override fun onScroll(notches: Int) = WsClient.scroll(notches)
-            override fun onScrollHorizontal(notches: Int) = WsClient.scrollHorizontal(notches)
-            override fun onMiddleClick() = WsClient.click("middle")
-            override fun onZoom(direction: Int) = WsClient.zoom(direction)
-            override fun onGesture(name: String) = WsClient.gesture(name)
-            override fun onDragStart() = WsClient.buttonDown("left")
+            override fun onLeftClick() = vm.click("left")
+            override fun onRightClick() = vm.click("right")
+            override fun onScroll(notches: Int) = vm.scroll(notches)
+            override fun onScrollHorizontal(notches: Int) = vm.scrollHorizontal(notches)
+            override fun onMiddleClick() = vm.click("middle")
+            override fun onZoom(direction: Int) = vm.zoom(direction)
+            override fun onGesture(name: String) = vm.gesture(name)
+            override fun onDragStart() = vm.buttonDown("left")
             override fun onDragEnd() {
                 MoveSender.flush()
-                WsClient.buttonUp("left")
+                vm.buttonUp("left")
             }
         }
     }
+
+    // ──────────────────────────── Mouse buttons ──────────────────────────
 
     private fun tap(id: Int, level: Haptics.Level = Haptics.Level.LIGHT, action: () -> Unit) {
         findViewById<View>(id).setOnClickListener {
@@ -209,13 +263,16 @@ class ControlActivity : AppCompatActivity() {
     }
 
     private fun setupMouseButtons() {
-        tap(R.id.btnLeft) { WsClient.click("left") }
-        tap(R.id.btnMiddle) { WsClient.click("middle") }
-        tap(R.id.btnRight) { WsClient.click("right") }
+        tap(R.id.btnLeft) { vm.click("left") }
+        tap(R.id.btnMiddle) { vm.click("middle") }
+        tap(R.id.btnRight) { vm.click("right") }
     }
+
+    // ──────────────────────────── Keyboard ───────────────────────────────
 
     private lateinit var typeLabel: TextView
     private var typeDialog: Dialog? = null
+    private var suppressWatcher = false
 
     private fun setupKeyboard() {
         typeLabel = findViewById(R.id.etType)
@@ -223,15 +280,11 @@ class ControlActivity : AppCompatActivity() {
             Haptics.light()
             showTypePopup()
         }
-        // Enter di baris utama harus bisa ditekan tanpa membuka panel ketik.
-        tap(R.id.kEnter, Haptics.Level.MEDIUM) { WsClient.key("enter") }
+        tap(R.id.kEnter, Haptics.Level.MEDIUM) { vm.key("enter") }
     }
 
     /**
-     * Pop-up mengetik: kartu di tengah layar dengan latar diburamkan
-     * (mode fokus). Kartu hanya tumbuh ke ATAS saat teks bertambah, karena
-     * tepi bawahnya dikunci setelah pengukuran pertama.
-     * Teks dikirim per huruf, jadi langsung muncul di PC.
+     * Pop-up mengetik: kartu di tengah layar dengan latar diburamkan.
      */
     private fun showTypePopup() {
         if (typeDialog?.isShowing == true) return
@@ -248,11 +301,8 @@ class ControlActivity : AppCompatActivity() {
         dialog.window?.apply {
             setLayout(WindowManager.LayoutParams.MATCH_PARENT,
                       WindowManager.LayoutParams.MATCH_PARENT)
-            // ADJUST_NOTHING: jendela TIDAK digeser/diperkecil saat keyboard
-            // muncul, sehingga panel tetap di tengah layar.
             setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING or
                              WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
-            // Latar diburamkan supaya fokus hanya ke panel ini.
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 try {
                     addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
@@ -263,12 +313,8 @@ class ControlActivity : AppCompatActivity() {
             setDimAmount(0.55f)
         }
         root.setBackgroundColor(Color.argb(0x66, 6, 6, 12))
-        root.setOnClickListener { dialog.dismiss() }   // ketuk luar = tutup
+        root.setOnClickListener { dialog.dismiss() }
 
-        // --- panel tetap di tengah; pertumbuhan hanya ke ATAS ---
-        // Tinggi awal kartu dicatat sekali, lalu setiap penambahan tinggi
-        // digeser ke bawah setengahnya. Efeknya tepi bawah diam di tempat
-        // dan kartu memanjang ke atas, sementara posisinya tetap terpusat.
         var baseHeight = 0
         card.viewTreeObserver.addOnGlobalLayoutListener {
             if (card.height > 0) {
@@ -277,7 +323,6 @@ class ControlActivity : AppCompatActivity() {
             }
         }
 
-        // Keyboard ditutup -> tutup panel.
         val decor = dialog.window?.decorView
         decor?.viewTreeObserver?.addOnGlobalLayoutListener(object :
             ViewTreeObserver.OnGlobalLayoutListener {
@@ -292,7 +337,6 @@ class ControlActivity : AppCompatActivity() {
             }
         })
 
-        // --- pengiriman teks per huruf, backspace tetap berfungsi ---
         et.addTextChangedListener(object : TextWatcher {
             private var before = ""
             override fun beforeTextChanged(s: CharSequence, st: Int, c: Int, a: Int) {
@@ -303,23 +347,23 @@ class ControlActivity : AppCompatActivity() {
                 if (suppressWatcher) return
                 val now = s.toString()
                 if (now.length > before.length && now.startsWith(before)) {
-                    WsClient.text(now.substring(before.length))
+                    vm.text(now.substring(before.length))
                     Haptics.tick()
                 } else if (now.length < before.length && before.startsWith(now)) {
-                    repeat(before.length - now.length) { WsClient.key("backspace") }
+                    repeat(before.length - now.length) { vm.key("backspace") }
                     Haptics.tick()
                 } else if (now != before) {
-                    repeat(before.length) { WsClient.key("backspace") }
-                    if (now.isNotEmpty()) WsClient.text(now)
+                    repeat(before.length) { vm.key("backspace") }
+                    if (now.isNotEmpty()) vm.text(now)
+                    Haptics.tick()
                 }
                 typeLabel.text = if (now.isEmpty()) "ketik di sini" else now
             }
         })
 
-        // Enter dari tombol: kirim, kosongkan, pop-up TETAP terbuka
         fun sendEnter() {
             Haptics.medium()
-            WsClient.key("enter")
+            vm.key("enter")
             suppressWatcher = true
             et.setText("")
             suppressWatcher = false
@@ -327,7 +371,6 @@ class ControlActivity : AppCompatActivity() {
         }
         enter.setOnClickListener { sendEnter() }
 
-        // Enter dari keyboard: jangan sisipkan baris baru, kirim saja
         et.setOnKeyListener { _, keyCode, event ->
             if (keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN) {
                 sendEnter(); true
@@ -349,17 +392,18 @@ class ControlActivity : AppCompatActivity() {
         }
     }
 
+    // ──────────────────────────── Shortcuts ──────────────────────────────
+
     private fun setupShortcuts() {
-        tap(R.id.kWinTab, Haptics.Level.MEDIUM) { WsClient.key("tab", listOf("win")) }
-        // Ctrl+W — tutup tab / jendela aktif
-        tap(R.id.kCloseTab, Haptics.Level.MEDIUM) { WsClient.key("w", listOf("ctrl")) }
+        tap(R.id.kWinTab, Haptics.Level.MEDIUM) { vm.key("tab", listOf("win")) }
+        tap(R.id.kCloseTab, Haptics.Level.MEDIUM) { vm.key("w", listOf("ctrl")) }
 
         // grup salin / tempel
         findViewById<TextView>(R.id.btnClipGroup).setOnClickListener { anchor ->
             Haptics.medium()
             showGroupPopup(anchor, R.layout.popup_clip, 200, 0) { root, pop ->
-                bindKey(root, pop, R.id.kCopy) { WsClient.key("c", listOf("ctrl")) }
-                bindKey(root, pop, R.id.kPaste) { WsClient.key("v", listOf("ctrl")) }
+                bindKey(root, pop, R.id.kCopy) { vm.key("c", listOf("ctrl")) }
+                bindKey(root, pop, R.id.kPaste) { vm.key("v", listOf("ctrl")) }
             }
         }
 
@@ -367,11 +411,9 @@ class ControlActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.btnUndoGroup).setOnClickListener { anchor ->
             Haptics.medium()
             showGroupPopup(anchor, R.layout.popup_undo, 200, 0) { root, pop ->
-                bindKey(root, pop, R.id.kUndo) { WsClient.key("z", listOf("ctrl")) }
-                // Ctrl+Y dipakai Office/Notepad, Ctrl+Shift+Z dipakai peramban &
-                // aplikasi desain. Keduanya dikirim agar redo bekerja luas.
+                bindKey(root, pop, R.id.kUndo) { vm.key("z", listOf("ctrl")) }
                 bindKey(root, pop, R.id.kRedo) {
-                    WsClient.key("y", listOf("ctrl"))
+                    vm.key("y", listOf("ctrl"))
                 }
             }
         }
@@ -380,9 +422,9 @@ class ControlActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.btnConnGroup).setOnClickListener { anchor ->
             Haptics.medium()
             showGroupPopup(anchor, R.layout.popup_conn, 215, 0) { root, pop ->
-                bindKey(root, pop, R.id.kWifi, close = true) { WsClient.radio("wifi") }
-                bindKey(root, pop, R.id.kBluetooth, close = true) { WsClient.radio("bluetooth") }
-                bindKey(root, pop, R.id.kHotspot, close = true) { WsClient.radio("hotspot") }
+                bindKey(root, pop, R.id.kWifi, close = true) { vm.radio("wifi") }
+                bindKey(root, pop, R.id.kBluetooth, close = true) { vm.radio("bluetooth") }
+                bindKey(root, pop, R.id.kHotspot, close = true) { vm.radio("hotspot") }
             }
         }
 
@@ -390,21 +432,17 @@ class ControlActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.btnAdvance).setOnClickListener { anchor ->
             Haptics.medium()
             showGroupPopup(anchor, R.layout.popup_advance, 230, 230) { root, pop ->
-                bindKey(root, pop, R.id.kEsc) { WsClient.key("esc") }
-                bindKey(root, pop, R.id.kTab) { WsClient.key("tab") }
-                bindKey(root, pop, R.id.kWin) { WsClient.key("win") }
-                bindKey(root, pop, R.id.kDel) { WsClient.key("delete") }
-                bindKey(root, pop, R.id.kSettings) { WsClient.key(",", listOf("ctrl")) }
-                bindKey(root, pop, R.id.kScreenOff, close = true) { WsClient.power("screenoff") }
-                bindKey(root, pop, R.id.kLock, close = true) { WsClient.power("lock") }
+                bindKey(root, pop, R.id.kEsc) { vm.key("esc") }
+                bindKey(root, pop, R.id.kTab) { vm.key("tab") }
+                bindKey(root, pop, R.id.kWin) { vm.key("win") }
+                bindKey(root, pop, R.id.kDel) { vm.key("delete") }
+                bindKey(root, pop, R.id.kSettings) { vm.key(",", listOf("ctrl")) }
+                bindKey(root, pop, R.id.kScreenOff, close = true) { vm.power("screenoff") }
+                bindKey(root, pop, R.id.kLock, close = true) { vm.power("lock") }
             }
         }
     }
 
-    /**
-     * Pop-up grup tombol yang muncul di atas tombol pemanggilnya.
-     * Dipakai oleh panel Advance, salin/tempel, urung/ulang, dan kontrol koneksi.
-     */
     private fun showGroupPopup(
         anchor: View,
         layoutRes: Int,
@@ -426,7 +464,6 @@ class ControlActivity : AppCompatActivity() {
         bind(content, popup)
         popup.setOnDismissListener { advancePopup = null }
 
-        // ukur agar pop-up muncul tepat DI ATAS tombol pemanggil
         content.measure(
             View.MeasureSpec.makeMeasureSpec((widthDp * d).toInt(), View.MeasureSpec.EXACTLY),
             View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
@@ -444,63 +481,31 @@ class ControlActivity : AppCompatActivity() {
         }
     }
 
-    // ---------------------------------------------------------------- volume --
+    // ──────────────────────────── Volume ─────────────────────────────────
+
     private fun setupVolume() {
-        volumeSlider.value = WsClient.volume
-        volumeSlider.onValueChanged = { v ->
-            val now = System.currentTimeMillis()
-            if (v != lastVolSent && now - lastVolTime >= 40L) {
-                sendVolume(v)
-            }
-        }
-        volumeSlider.onMuteTap = { WsClient.media("mute") }
-        volumeSlider.onCommit = { v ->
-            WsClient.volume = v
-            if (v != lastVolSent) sendVolume(v)
-        }
-        WsClient.volGet()
+        volumeSlider.value = vm.volume.value
+        volumeSlider.onValueChanged = { v -> vm.setVolume(v) }
+        volumeSlider.onMuteTap = { vm.media("mute") }
+        volumeSlider.onCommit = { v -> vm.commitVolume(v) }
     }
 
-    private fun sendVolume(v: Int) {
-        if (absVolume) {
-            lastVolSent = v
-            lastVolTime = System.currentTimeMillis()
-            WsClient.volSet(v)
-        } else {
-            // fallback: kirim langkah volup/voldown (±2% per langkah)
-            val prev = if (lastVolSent < 0) volumeSlider.value else lastVolSent
-            val steps = (v - prev) / 2
-            if (steps != 0) {
-                repeat(kotlin.math.abs(steps)) {
-                    WsClient.media(if (steps > 0) "volup" else "voldown")
-                }
-                lastVolSent = prev + steps * 2
-                lastVolTime = System.currentTimeMillis()
-            }
-        }
-    }
-
-    private fun onVolumeError() {
-        absVolume = false
-        if (!volErrToasted) {
-            volErrToasted = true
-            Toast.makeText(this,
-                "server tanpa pycaw — slider memakai mode bertingkat",
-                Toast.LENGTH_LONG).show()
-        }
-    }
+    // ──────────────────────────── Media ──────────────────────────────────
 
     private fun setupMedia() {
-        tap(R.id.mPlay, Haptics.Level.MEDIUM) { WsClient.media("playpause") }
-        tap(R.id.mPrev) { WsClient.media("prev") }
-        tap(R.id.mNext) { WsClient.media("next") }
+        tap(R.id.mPlay, Haptics.Level.MEDIUM) { vm.media("playpause") }
+        tap(R.id.mPrev) { vm.media("prev") }
+        tap(R.id.mNext) { vm.media("next") }
     }
+
+    // ──────────────────────────── D-pad ──────────────────────────────────
 
     private fun setupDpad() {
-        findViewById<DpadView>(R.id.dpad).onDirection = { dir -> WsClient.key(dir) }
+        findViewById<DpadView>(R.id.dpad).onDirection = { dir -> vm.key(dir) }
     }
 
-    /** Susun tombol makro kustom di baris tersendiri. Sembunyi bila kosong. */
+    // ──────────────────────────── Macros ─────────────────────────────────
+
     private fun buildMacroRow() {
         val row = findViewById<android.widget.LinearLayout>(R.id.macroRow)
         row.removeAllViews()
@@ -530,6 +535,8 @@ class ControlActivity : AppCompatActivity() {
         }
     }
 
+    // ──────────────────────────── Top bar ────────────────────────────────
+
     private fun setupTopBar() {
         val btnRotate = findViewById<TextView>(R.id.btnRotate)
         fun renderRotate() {
@@ -544,13 +551,10 @@ class ControlActivity : AppCompatActivity() {
         renderRotate()
         btnRotate.setOnClickListener {
             Haptics.heavy()
-            // Hanya arah INPUT trackpad yang berputar — layout tidak berubah.
-            // Siklus: 0° -> 90° -> 270° -> 0°
             val next = Prefs.nextRotation(trackpad.inputRotation)
             trackpad.inputRotation = next
             Prefs.setInputRotation(this, next)
             renderRotate()
-            // Seluruh tampilan ikut berputar, memakai layout lanskap khusus.
             applyScreenOrientation()
         }
         findViewById<TextView>(R.id.btnSettings).setOnClickListener {
@@ -559,12 +563,13 @@ class ControlActivity : AppCompatActivity() {
         }
         findViewById<TextView>(R.id.btnDisconnect).setOnClickListener {
             Haptics.heavy()
-            WsClient.disconnect()
+            vm.disconnect()
             finish()
         }
     }
 
-    // ---------------------------------------------------------------- state --
+    // ──────────────────────────── State ──────────────────────────────────
+
     override fun onResume() {
         super.onResume()
         Haptics.enabled = Prefs.hapticEnabled(this)
@@ -575,10 +580,12 @@ class ControlActivity : AppCompatActivity() {
         trackpad.inputRotation = Prefs.inputRotation(this)
         trackpad.pointerLocation = Prefs.pointerLocation(this)
         trackpad.showTaps = Prefs.showTaps(this)
-        WsClient.autoReconnect = Prefs.autoReconnect(this)
+        vm.setAutoReconnect(Prefs.autoReconnect(this))
         applyScreenOrientation()
         buildMacroRow()
-        if (!WsClient.connected) finish()
+        setupPing()
+
+        if (!vm.isConnected) finish()
     }
 
     override fun onDestroy() {
@@ -588,9 +595,8 @@ class ControlActivity : AppCompatActivity() {
         MoveSender.reset()
         WsClient.onReconnecting = null
         pingHandler.removeCallbacksAndMessages(null)
-        WsClient.onPing = null
         typeDialog?.dismiss()
         advancePopup?.dismiss()
-        if (isFinishing && !isChangingConfigurations) WsClient.disconnect()
+        if (isFinishing && !isChangingConfigurations) vm.disconnect()
     }
 }

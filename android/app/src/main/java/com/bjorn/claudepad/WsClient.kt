@@ -1,5 +1,11 @@
 package com.bjorn.claudepad
 
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -19,15 +25,73 @@ import java.util.concurrent.TimeUnit
  *   2. server balas {"t":"hello_ok","salt":...}
  *   3. turunkan kunci sesi dari PIN/token + salt, kirim {"t":"auth"} (plaintext)
  *   4. server balas auth_ok, lalu SEMUA pesan berikutnya biner terenkripsi.
+ *
+ * Arsitektur state:
+ * - ConnectionState (StateFlow): status koneksi terkini
+ * - serverMessages (SharedFlow): pesan dari server (volume, power_result, dll)
+ * - pingMs (StateFlow): latensi terkini
+ * - reconnectingTo (StateFlow): info reconnect, null = tidak reconnecting
+ * - newToken (SharedFlow): token baru dari server
+ *
+ * Callback lama (onState, onMessage, dll) dipertahankan untuk RemoteService.
  */
 object WsClient {
+
+    // ──────────────────────────── state types ────────────────────────────
+
+    /** Status koneksi WebSocket. */
+    sealed class ConnectionState {
+        data object Disconnected : ConnectionState()
+        data object Connecting : ConnectionState()
+        data object Connected : ConnectionState()
+        data class Error(val message: String) : ConnectionState()
+    }
+
+    /** Informasi koneksi setelah auth_ok berhasil. */
+    data class ConnectionInfo(
+        val hostName: String = "—",
+        val transport: String = "—",
+        val serverVersion: String = "—",
+        val volume: Int = 50,
+        val macAddress: String = "",
+        val encrypted: Boolean = false
+    )
+
+    // ──────────────────────────── StateFlow API ──────────────────────────
+
+    private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
+    val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
+
+    private val _connectionInfo = MutableStateFlow(ConnectionInfo())
+    val connectionInfo: StateFlow<ConnectionInfo> = _connectionInfo.asStateFlow()
+
+    private val _pingMs = MutableStateFlow(-1)
+    val pingMs: StateFlow<Int> = _pingMs.asStateFlow()
+
+    private val _reconnectingTo = MutableStateFlow<Int?>(null)
+    val reconnectingTo: StateFlow<Int?> = _reconnectingTo.asStateFlow()
+
+    private val _serverMessages = MutableSharedFlow<JSONObject>(extraBufferCapacity = 16)
+    val serverMessages: SharedFlow<JSONObject> = _serverMessages.asSharedFlow()
+
+    private val _newToken = MutableSharedFlow<String>(extraBufferCapacity = 4)
+    val newToken: SharedFlow<String> = _newToken.asSharedFlow()
+
+    // ──────────────────────────── legacy callbacks ───────────────────────
+    // Dipertahankan untuk RemoteService (tidak lifecycle-aware).
+
+    var onState: ((Boolean, String) -> Unit)? = null
+    var onNewToken: ((String) -> Unit)? = null
+    var onMessage: ((JSONObject) -> Unit)? = null
+    var onPing: ((Int) -> Unit)? = null
+    var onReconnecting: ((Int) -> Unit)? = null
+
+    // ──────────────────────────── internal state ─────────────────────────
 
     private fun buildClient(host: String): OkHttpClient {
         val b = OkHttpClient.Builder()
             .pingInterval(15, TimeUnit.SECONDS)
             .connectTimeout(8, TimeUnit.SECONDS)
-        // Ikat ke interface yang satu subnet dengan PC, supaya paket tidak
-        // lari ke jaringan seluler saat HP menjadi hotspot.
         Net.localAddressFor(host)?.let { local ->
             boundVia = local.hostAddress ?: ""
             b.socketFactory(Net.BoundSocketFactory(local))
@@ -38,7 +102,6 @@ object WsClient {
     @Volatile var boundVia: String = ""
         private set
 
-    /** true bila lalu lintas terenkripsi (v3.0+). */
     @Volatile var encrypted = false
         private set
     private var crypto: CryptoBox? = null
@@ -58,14 +121,10 @@ object WsClient {
         private set
     @Volatile var volume: Int = 50
 
-    @Volatile var pingMs: Int = -1
-        private set
+    // Raw ping value — hanya untuk kompatibilitas RemoteService.
+    // ViewModel harus pakai StateFlow `pingMs`.
+    @Volatile private var _pingMsRaw: Int = -1
     private var pingSentAt = 0L
-    var onPing: ((Int) -> Unit)? = null
-
-    var onState: ((Boolean, String) -> Unit)? = null
-    var onNewToken: ((String) -> Unit)? = null
-    var onMessage: ((JSONObject) -> Unit)? = null
 
     private var lastHost = ""
     private var lastPort = 8765
@@ -76,151 +135,42 @@ object WsClient {
     private var manualClose = false
 
     var autoReconnect = true
-    var onReconnecting: ((Int) -> Unit)? = null
+
+    // ──────────────────────────── public API ─────────────────────────────
 
     fun connect(host: String, port: Int, pin: String, appVersion: String,
                 token: String = "") {
         lastHost = host; lastPort = port; lastPin = pin
         lastVersion = appVersion; lastToken = token
         manualClose = false
+        _connectionState.value = ConnectionState.Connecting
         openSocket()
-    }
-
-    private fun openSocket() {
-        val host = lastHost
-        val port = lastPort
-        val pin = lastPin
-        val token = lastToken
-        val appVersion = lastVersion
-        closeQuietly()
-        val req = Request.Builder().url("ws://$host:$port/ws").build()
-        ws = buildClient(host).newWebSocket(req, object : WebSocketListener() {
-            override fun onOpen(webSocket: WebSocket, response: Response) {
-                crypto = null
-                encrypted = false
-                webSocket.send(JSONObject().put("t", "hello").toString())
-            }
-
-            override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
-                val box = crypto ?: return
-                val plain = try { String(box.open(bytes.toByteArray())) }
-                            catch (e: Exception) { return }
-                handleJson(plain, webSocket, pin, token, appVersion)
-            }
-
-            override fun onMessage(webSocket: WebSocket, text: String) {
-                handleJson(text, webSocket, pin, token, appVersion)
-            }
-
-            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                connected = false
-                val raw = t.message ?: "koneksi gagal"
-                val msg = if (raw.contains("failed to connect", true) ||
-                              raw.contains("ETIMEDOUT", true)) {
-                    "tidak sampai ke pc — tekan ⚙ lalu Diagnosa koneksi"
-                } else raw
-                if (!tryReconnect()) onState?.invoke(false, msg)
-            }
-
-            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                connected = false
-                if (!tryReconnect()) onState?.invoke(false, "terputus")
-            }
-        })
-    }
-
-    private fun handleJson(text: String, webSocket: WebSocket,
-                           pin: String, token: String, appVersion: String) {
-        val o = try { JSONObject(text) } catch (e: Exception) { return }
-        when (o.optString("t")) {
-            "hello_ok" -> {
-                // Turunkan kunci sesi dari rahasia yang sudah sama-sama
-                // dimiliki (PIN atau token pairing), lalu kirim auth.
-                try {
-                    val salt = hexToBytes(o.optString("salt"))
-                    val secret = if (token.isNotEmpty()) token else pin
-                    crypto = CryptoBox.derive(secret, salt)
-                } catch (e: Exception) { crypto = null }
-                val auth = JSONObject().put("t", "auth")
-                    .put("pin", pin).put("ver", appVersion)
-                if (token.isNotEmpty()) auth.put("token", token)
-                webSocket.send(auth.toString())      // auth tetap plaintext
-            }
-            "auth_ok" -> {
-                connected = true
-                hostName = o.optString("host", "PC")
-                transport = o.optString("transport", "wifi")
-                serverVersion = o.optString("version", "—")
-                if (!o.isNull("vol")) volume = o.optInt("vol", 50)
-                macAddress = o.optString("mac", "")
-                encrypted = o.optBoolean("encrypted", false)
-                val fresh = o.optString("token", "")
-                if (fresh.isNotEmpty()) onNewToken?.invoke(fresh)
-                retryCount = 0
-                onState?.invoke(true, "terhubung")
-            }
-            "auth_fail" -> {
-                connected = false
-                val msg = if (o.optString("reason") == "version") {
-                    "versi tidak cocok — server v" + o.optString("server", "?") +
-                        ", apk v" + o.optString("app", "?") + ". samakan dulu keduanya."
-                } else "pin salah"
-                onState?.invoke(false, msg)
-                webSocket.close(1000, null)
-            }
-            "pong" -> {
-                if (pingSentAt > 0L) {
-                    pingMs = (System.currentTimeMillis() - pingSentAt).toInt().coerceAtMost(9999)
-                    pingSentAt = 0L
-                    PingLog.record(pingMs, transport, hostName)
-                    onPing?.invoke(pingMs)
-                }
-            }
-            "vol" -> {
-                if (!o.isNull("v")) volume = o.optInt("v", volume)
-                onMessage?.invoke(o)
-            }
-            else -> onMessage?.invoke(o)
-        }
-    }
-
-    private fun hexToBytes(hex: String): ByteArray {
-        val out = ByteArray(hex.length / 2)
-        for (i in out.indices) {
-            out[i] = ((Character.digit(hex[i * 2], 16) shl 4) +
-                      Character.digit(hex[i * 2 + 1], 16)).toByte()
-        }
-        return out
-    }
-
-    private fun tryReconnect(): Boolean {
-        if (manualClose || !autoReconnect || lastHost.isEmpty()) return false
-        if (retryCount >= 5) return false
-        retryCount++
-        val delay = (retryCount * 900L).coerceAtMost(4000L)
-        onReconnecting?.invoke(retryCount)
-        android.os.Handler(android.os.Looper.getMainLooper())
-            .postDelayed({ if (!manualClose && !connected) openSocket() }, delay)
-        return true
-    }
-
-    private fun closeQuietly() {
-        ws?.close(1000, null)
-        ws = null
     }
 
     fun disconnect() {
         manualClose = true
         connected = false
-        pingMs = -1
+        _pingMsRaw = -1
+        _pingMs.value = -1
         pingSentAt = 0L
         retryCount = 0
         crypto = null
         encrypted = false
+        _reconnectingTo.value = null
+        _connectionState.value = ConnectionState.Disconnected
         closeQuietly()
     }
 
-    // ---------------------------------------------------------------- kirim --
+    fun measurePing() {
+        if (ws == null) return
+        val now = System.currentTimeMillis()
+        if (pingSentAt > 0L && now - pingSentAt < 4000) return
+        pingSentAt = now
+        send("ping")
+    }
+
+    // ──────────────────────────── send commands ──────────────────────────
+
     private fun send(o: JSONObject) {
         val sock = ws ?: return
         val box = crypto
@@ -257,11 +207,161 @@ object WsClient {
     fun volSet(v: Int) = send(JSONObject().put("t", "volset").put("v", v))
     fun volGet() = send("volget")
 
-    fun measurePing() {
-        if (ws == null) return
-        val now = System.currentTimeMillis()
-        if (pingSentAt > 0L && now - pingSentAt < 4000) return
-        pingSentAt = now
-        send("ping")
+    // ──────────────────────────── WebSocket internals ────────────────────
+
+    private fun openSocket() {
+        val host = lastHost
+        val port = lastPort
+        val pin = lastPin
+        val token = lastToken
+        val appVersion = lastVersion
+        closeQuietly()
+        val req = Request.Builder().url("ws://$host:$port/ws").build()
+        ws = buildClient(host).newWebSocket(req, object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                crypto = null
+                encrypted = false
+                webSocket.send(JSONObject().put("t", "hello").toString())
+            }
+
+            override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
+                val box = crypto ?: return
+                val plain = try { String(box.open(bytes.toByteArray())) }
+                            catch (e: Exception) { return }
+                handleJson(plain, webSocket, pin, token, appVersion)
+            }
+
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                handleJson(text, webSocket, pin, token, appVersion)
+            }
+
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                connected = false
+                val raw = t.message ?: "koneksi gagal"
+                val msg = if (raw.contains("failed to connect", true) ||
+                              raw.contains("ETIMEDOUT", true)) {
+                    "tidak sampai ke pc — tekan ⚙ lalu Diagnosa koneksi"
+                } else raw
+                if (!tryReconnect()) {
+                    _connectionState.value = ConnectionState.Error(msg)
+                    onState?.invoke(false, msg)
+                }
+            }
+
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                connected = false
+                if (!tryReconnect()) {
+                    _connectionState.value = ConnectionState.Disconnected
+                    onState?.invoke(false, "terputus")
+                }
+            }
+        })
+    }
+
+    private fun handleJson(text: String, webSocket: WebSocket,
+                           pin: String, token: String, appVersion: String) {
+        val o = try { JSONObject(text) } catch (e: Exception) { return }
+        when (o.optString("t")) {
+            "hello_ok" -> {
+                try {
+                    val salt = hexToBytes(o.optString("salt"))
+                    val secret = if (token.isNotEmpty()) token else pin
+                    crypto = CryptoBox.derive(secret, salt)
+                } catch (e: Exception) { crypto = null }
+                val auth = JSONObject().put("t", "auth")
+                    .put("pin", pin).put("ver", appVersion)
+                if (token.isNotEmpty()) auth.put("token", token)
+                webSocket.send(auth.toString())
+            }
+            "auth_ok" -> {
+                connected = true
+                hostName = o.optString("host", "PC")
+                transport = o.optString("transport", "wifi")
+                serverVersion = o.optString("version", "—")
+                if (!o.isNull("vol")) volume = o.optInt("vol", 50)
+                macAddress = o.optString("mac", "")
+                encrypted = o.optBoolean("encrypted", false)
+                val fresh = o.optString("token", "")
+
+                // Emit ke StateFlow
+                _connectionInfo.value = ConnectionInfo(
+                    hostName = hostName,
+                    transport = transport,
+                    serverVersion = serverVersion,
+                    volume = volume,
+                    macAddress = macAddress,
+                    encrypted = encrypted
+                )
+                _connectionState.value = ConnectionState.Connected
+                _reconnectingTo.value = null
+                retryCount = 0
+
+                // Emit token baru
+                if (fresh.isNotEmpty()) {
+                    _newToken.tryEmit(fresh)
+                    onNewToken?.invoke(fresh)
+                }
+
+                onState?.invoke(true, "terhubung")
+            }
+            "auth_fail" -> {
+                connected = false
+                val msg = if (o.optString("reason") == "version") {
+                    "versi tidak cocok — server v" + o.optString("server", "?") +
+                        ", apk v" + o.optString("app", "?") + ". samakan dulu keduanya."
+                } else "pin salah"
+                _connectionState.value = ConnectionState.Error(msg)
+                onState?.invoke(false, msg)
+                webSocket.close(1000, null)
+            }
+            "pong" -> {
+                if (pingSentAt > 0L) {
+                    val ms = (System.currentTimeMillis() - pingSentAt).toInt().coerceAtMost(9999)
+                    _pingMsRaw = ms
+                    _pingMs.value = ms
+                    pingSentAt = 0L
+                    PingLog.record(ms, transport, hostName)
+                    onPing?.invoke(ms)
+                }
+            }
+            "vol" -> {
+                if (!o.isNull("v")) {
+                    volume = o.optInt("v", volume)
+                    _connectionInfo.value = _connectionInfo.value.copy(volume = volume)
+                }
+                _serverMessages.tryEmit(o)
+                onMessage?.invoke(o)
+            }
+            else -> {
+                _serverMessages.tryEmit(o)
+                onMessage?.invoke(o)
+            }
+        }
+    }
+
+    private fun hexToBytes(hex: String): ByteArray {
+        val out = ByteArray(hex.length / 2)
+        for (i in out.indices) {
+            out[i] = ((Character.digit(hex[i * 2], 16) shl 4) +
+                      Character.digit(hex[i * 2 + 1], 16)).toByte()
+        }
+        return out
+    }
+
+    private fun tryReconnect(): Boolean {
+        if (manualClose || !autoReconnect || lastHost.isEmpty()) return false
+        if (retryCount >= 5) return false
+        retryCount++
+        _reconnectingTo.value = retryCount
+        val delay = (retryCount * 900L).coerceAtMost(4000L)
+        onReconnecting?.invoke(retryCount)
+        android.os.Handler(android.os.Looper.getMainLooper())
+            .postDelayed({ if (!manualClose && !connected) openSocket() }, delay)
+        return true
+    }
+
+    private fun closeQuietly() {
+        ws?.close(1000, null)
+        ws = null
     }
 }

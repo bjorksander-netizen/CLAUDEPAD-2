@@ -8,10 +8,25 @@ import android.os.Bundle
 import android.view.View
 import android.widget.SeekBar
 import android.widget.TextView
+import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.launch
 
+/**
+ * Halaman pengaturan.
+ *
+ * Arsitektur:
+ * - [SettingsViewModel] mengelola state koneksi.
+ * - Prefs tetap diakses langsung untuk setting lokal (haptic, sensitivity, dll).
+ * - UI binding tetap di Activity karena settings adalah UI-heavy.
+ */
 class SettingsActivity : AppCompatActivity() {
+
+    private val vm: SettingsViewModel by viewModels()
 
     companion object {
         const val README_URL = "https://github.com/bjorksander-netizen/CLAUDEPAD#readme"
@@ -58,7 +73,7 @@ class SettingsActivity : AppCompatActivity() {
         }
         findViewById<TextView>(R.id.btnDisconnect).setOnClickListener {
             Haptics.heavy()
-            WsClient.disconnect()
+            vm.disconnect()
             val i = Intent(this, MainActivity::class.java)
             i.flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK
             startActivity(i)
@@ -68,22 +83,32 @@ class SettingsActivity : AppCompatActivity() {
         Fonts.apply(findViewById(R.id.rootSettings))
     }
 
+    override fun onResume() {
+        super.onResume()
+        bindConnectionInfo()
+    }
+
+    // ──────────────────────────── Connection info ────────────────────────
+
     private fun bindConnectionInfo() {
-        val connected = WsClient.connected
+        val connected = vm.isConnected
+        val info = vm.connectionInfo
         findViewById<TextView>(R.id.tvConnStatus).apply {
             text = if (connected) "terhubung" else "terputus"
             setTextColor(getColor(if (connected) R.color.green else R.color.red))
         }
         findViewById<TextView>(R.id.tvTransport).text =
-            if (!connected) "—" else when (WsClient.transport) {
+            if (!connected) "—" else when (info.transport) {
                 "usb" -> "kabel usb"
                 "wifi" -> "wifi / hotspot"
-                else -> WsClient.transport
+                else -> info.transport
             }
-        findViewById<TextView>(R.id.tvHost).text = if (connected) WsClient.hostName else "—"
+        findViewById<TextView>(R.id.tvHost).text = if (connected) info.hostName else "—"
         findViewById<TextView>(R.id.tvServerVer).text =
-            if (connected) "v${WsClient.serverVersion}" else "—"
+            if (connected) "v${info.serverVersion}" else "—"
     }
+
+    // ──────────────────────────── Toggles ────────────────────────────────
 
     private fun toggleRow(rowId: Int, labelId: Int, get: () -> Boolean, set: (Boolean) -> Unit,
                           onText: String = "aktif", offText: String = "nonaktif") {
@@ -112,7 +137,7 @@ class SettingsActivity : AppCompatActivity() {
 
         toggleRow(R.id.rowAutoReconnect, R.id.tvAutoReconnect,
             { Prefs.autoReconnect(this) },
-            { v -> Prefs.setAutoReconnect(this, v); WsClient.autoReconnect = v })
+            { v -> Prefs.setAutoReconnect(this, v); vm.setAutoReconnect(v) })
 
         findViewById<View>(R.id.rowShowNotif).setOnClickListener {
             Haptics.medium()
@@ -128,14 +153,8 @@ class SettingsActivity : AppCompatActivity() {
                 .setTitle("lupakan pemasangan")
                 .setMessage("PIN akan diminta lagi saat menyambung berikutnya.")
                 .setPositiveButton("lupakan") { _, _ ->
-                    Prefs.setToken(this, "")
-                    findViewById<View>(R.id.rowShowNotif).setOnClickListener {
-            Haptics.medium()
-            RemoteService.start(this)
-            toast("notifikasi kontrol ditampilkan")
-        }
-
-        findViewById<TextView>(R.id.tvPairState).text = "belum dipasangkan"
+                    vm.clearToken()
+                    findViewById<TextView>(R.id.tvPairState).text = "belum dipasangkan"
                 }
                 .setNegativeButton("batal", null)
                 .show()
@@ -152,7 +171,6 @@ class SettingsActivity : AppCompatActivity() {
         bindRotationRow()
     }
 
-    /** Rotasi input berputar antara 0°, 90°, dan 270°. */
     private fun bindRotationRow() {
         val label = findViewById<TextView>(R.id.tvOrientation)
         fun render() {
@@ -167,10 +185,11 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
+    // ──────────────────────────── Sensitivity ────────────────────────────
+
     private fun bindSensitivity() {
         val tv = findViewById<TextView>(R.id.tvSens)
         val seek = findViewById<SeekBar>(R.id.seekSens)
-        // progress 0..40  ->  sensitivitas 0.5x .. 4.5x
         fun toSens(p: Int) = 0.5f + p / 10f
         val current = Prefs.sensitivity(this)
         seek.progress = ((current - 0.5f) * 10f).toInt().coerceIn(0, 40)
@@ -199,7 +218,6 @@ class SettingsActivity : AppCompatActivity() {
                 tvBlur.text = "$p%"
                 if (fromUser) {
                     Prefs.setBlurIntensity(this@SettingsActivity, p)
-                    // pratinjau langsung di halaman ini
                     Glass.apply(this@SettingsActivity, findViewById(R.id.rootSettings))
                 }
             }
@@ -219,7 +237,7 @@ class SettingsActivity : AppCompatActivity() {
                     val str = p / 100f
                     Prefs.setHapticStrength(this@SettingsActivity, str)
                     Haptics.strength = str
-                    Haptics.medium()   // rasakan langsung kekuatannya
+                    Haptics.medium()
                 }
             }
             override fun onStartTrackingTouch(sb: SeekBar?) {}
@@ -227,19 +245,18 @@ class SettingsActivity : AppCompatActivity() {
         })
     }
 
-    // ------------------------------------------------------------------ daya --
-    /** Kontrol daya PC. Semua aksi berisiko dikonfirmasi lebih dulu. */
+    // ──────────────────────────── Power ──────────────────────────────────
+
     private fun bindPower() {
         findViewById<View>(R.id.rowPower).setOnClickListener { anchor ->
             Haptics.medium()
-            if (!WsClient.connected) {
+            if (!vm.isConnected) {
                 toast("belum terhubung ke pc")
                 return@setOnClickListener
             }
             showPowerPopup(anchor)
         }
 
-        // Wake-on-LAN — eksperimental
         val wolLabel = findViewById<TextView>(R.id.tvWol)
         findViewById<View>(R.id.rowWol).setOnClickListener {
             Haptics.medium()
@@ -278,7 +295,6 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    /** Pop-up daya, bergaya sama dengan panel Advance di layar utama. */
     private fun showPowerPopup(anchor: View) {
         val d = resources.displayMetrics.density
         val content = layoutInflater.inflate(R.layout.popup_power, null)
@@ -298,11 +314,11 @@ class SettingsActivity : AppCompatActivity() {
                         .setTitle(label)
                         .setMessage("Yakin ingin $label? Pekerjaan yang belum " +
                                     "disimpan di PC bisa hilang.")
-                        .setPositiveButton("lanjutkan") { _, _ -> WsClient.power(action) }
+                        .setPositiveButton("lanjutkan") { _, _ -> vm.power(action) }
                         .setNegativeButton("batal", null)
                         .show()
                 } else {
-                    WsClient.power(action)
+                    vm.power(action)
                     popup.dismiss()
                 }
             }
@@ -322,7 +338,8 @@ class SettingsActivity : AppCompatActivity() {
     private fun toast(s: String) =
         android.widget.Toast.makeText(this, s, android.widget.Toast.LENGTH_SHORT).show()
 
-    // ------------------------------------------------------------------ makro --
+    // ──────────────────────────── Macros ─────────────────────────────────
+
     private fun bindMacros() {
         refreshMacroCount()
         findViewById<View>(R.id.rowMacros).setOnClickListener {
@@ -336,7 +353,6 @@ class SettingsActivity : AppCompatActivity() {
             "${Macros.all(this).size}/${Macros.MAX}"
     }
 
-    /** Daftar makro yang ada + tombol tambah/hapus. */
     private fun showMacroManager() {
         val list = Macros.all(this)
         val items = list.map { "${it.label.ifEmpty { it.key }}  ·  ${it.combo()}" }
@@ -350,7 +366,6 @@ class SettingsActivity : AppCompatActivity() {
                 if (canAdd && which == items.size - 1) {
                     showMacroEditor()
                 } else {
-                    // ketuk makro yang ada -> tawarkan hapus
                     AlertDialog.Builder(this)
                         .setTitle(list[which].combo())
                         .setMessage("Hapus makro ini?")
@@ -396,7 +411,8 @@ class SettingsActivity : AppCompatActivity() {
             .show()
     }
 
-    // ---------------------------------------------------------------- log ping --
+    // ──────────────────────────── Ping log ───────────────────────────────
+
     private fun bindPingLog() {
         findViewById<TextView>(R.id.tvPingLog).text = PingLog.summary()
 
@@ -424,7 +440,6 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    /** Simpan laporan sebagai berkas teks lalu buka lembar berbagi Android. */
     private fun sharePingLog() {
         if (PingLog.size() == 0) {
             android.widget.Toast.makeText(this,
@@ -449,12 +464,13 @@ class SettingsActivity : AppCompatActivity() {
                 putExtra(Intent.EXTRA_TEXT, PingLog.summary())
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            // Pengguna memilih sendiri tujuan berbagi lewat lembar bawaan Android
             startActivity(Intent.createChooser(send, "bagikan log ping"))
         } catch (e: Exception) {
             showText("gagal membagikan", "Tidak bisa menyimpan berkas log.\n\n${e.message}")
         }
     }
+
+    // ──────────────────────────── About ──────────────────────────────────
 
     private fun bindAbout() {
         val version = try {
@@ -480,7 +496,6 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    /** Jalankan diagnosa di thread terpisah lalu tampilkan laporannya. */
     private fun runDiagnostic() {
         val dlg = AlertDialog.Builder(this)
             .setTitle("diagnosa koneksi")
