@@ -1,10 +1,17 @@
 package com.bjorn.claudepad
 
+import android.util.Base64
+import java.security.KeyFactory
 import java.security.SecureRandom
+import java.security.spec.X509EncodedKeySpec
+import javax.crypto.Cipher
 import javax.crypto.Mac
 import javax.crypto.SecretKeyFactory
+import javax.crypto.spec.OAEPParameterSpec
 import javax.crypto.spec.PBEKeySpec
+import javax.crypto.spec.PSource
 import javax.crypto.spec.SecretKeySpec
+import javax.crypto.spec.MGF1ParameterSpec
 
 /**
  * Enkripsi lalu lintas — pasangan Kotlin dari server/crypto_box.py.
@@ -35,6 +42,28 @@ class CryptoBox private constructor(key: ByteArray) {
             val key = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
                 .generateSecret(spec).encoded
             return CryptoBox(key)
+        }
+
+        /**
+         * Enkripsi data dengan RSA public key (OAEP + SHA-256).
+         * Dipakai untuk mengenkripsi PIN/token sebelum dikirim ke server.
+         * pubKeyBase64: public key dalam format base64 (tanpa header PEM).
+         */
+        fun encryptWithPublicKey(pubKeyBase64: String, data: ByteArray): ByteArray {
+            val keyBytes = Base64.decode(pubKeyBase64, Base64.DEFAULT)
+            val keyFactory = KeyFactory.getInstance("RSA")
+            val spec = X509EncodedKeySpec(keyBytes)
+            val publicKey = keyFactory.generatePublic(spec)
+            val cipher = Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding")
+            cipher.init(
+                Cipher.ENCRYPT_MODE, publicKey,
+                OAEPParameterSpec(
+                    "SHA-256", "MGF1",
+                    MGF1ParameterSpec("SHA-256"),
+                    PSource.PSpecified.EMPTY
+                )
+            )
+            return cipher.doFinal(data)
         }
 
         private fun sha256(b: ByteArray): ByteArray =

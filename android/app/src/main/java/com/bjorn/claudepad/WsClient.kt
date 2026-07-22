@@ -105,6 +105,7 @@ object WsClient {
     @Volatile var encrypted = false
         private set
     private var crypto: CryptoBox? = null
+    private var serverPubKey: String = ""  // v3.2: RSA public key dari server
 
     private var ws: WebSocket? = null
 
@@ -156,6 +157,7 @@ object WsClient {
         retryCount = 0
         crypto = null
         encrypted = false
+        serverPubKey = ""
         _reconnectingTo.value = null
         _connectionState.value = ConnectionState.Disconnected
         closeQuietly()
@@ -221,6 +223,7 @@ object WsClient {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 crypto = null
                 encrypted = false
+                serverPubKey = ""
                 webSocket.send(JSONObject().put("t", "hello").toString())
             }
 
@@ -268,9 +271,37 @@ object WsClient {
                     val secret = if (token.isNotEmpty()) token else pin
                     crypto = CryptoBox.derive(secret, salt)
                 } catch (e: Exception) { crypto = null }
-                val auth = JSONObject().put("t", "auth")
-                    .put("pin", pin).put("ver", appVersion)
-                if (token.isNotEmpty()) auth.put("token", token)
+
+                // v3.2: Simpan public key RSA dari server untuk enkripsi auth.
+                serverPubKey = o.optString("pubkey", "")
+
+                // Kirim auth — PIN/token dienkripsi RSA jika server punya pubkey.
+                val auth = JSONObject().put("t", "auth").put("ver", appVersion)
+                if (serverPubKey.isNotEmpty()) {
+                    try {
+                        val encPin = CryptoBox.encryptWithPublicKey(
+                            serverPubKey, pin.toByteArray())
+                        auth.put("pin_enc", android.util.Base64.encodeToString(
+                            encPin, android.util.Base64.NO_WRAP))
+                    } catch (e: Exception) {
+                        // Fallback ke pin plain jika enkripsi gagal
+                        auth.put("pin", pin)
+                    }
+                    if (token.isNotEmpty()) {
+                        try {
+                            val encToken = CryptoBox.encryptWithPublicKey(
+                                serverPubKey, token.toByteArray())
+                            auth.put("token_enc", android.util.Base64.encodeToString(
+                                encToken, android.util.Base64.NO_WRAP))
+                        } catch (e: Exception) {
+                            auth.put("token", token)
+                        }
+                    }
+                } else {
+                    // Server lama tanpa pubkey — kirim plain
+                    auth.put("pin", pin)
+                    if (token.isNotEmpty()) auth.put("token", token)
+                }
                 webSocket.send(auth.toString())
             }
             "auth_ok" -> {

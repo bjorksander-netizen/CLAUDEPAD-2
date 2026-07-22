@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Laporan Fitur — Perkuat PIN + Rate Limit</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0e0e14; color: #e2e2e8; line-height: 1.6; padding: 32px; }
+  .container { max-width: 800px; margin: 0 auto; }
+  h1 { font-size: 1.6rem; color: #7c6cff; margin-bottom: 4px; }
+  .subtitle { color: #8e8ea0; font-size: 0.9rem; margin-bottom: 28px; }
+  .card { background: #191922; border: 1px solid #2a2a38; border-radius: 10px; padding: 20px 24px; margin-bottom: 18px; }
+  .card h2 { font-size: 1.05rem; color: #f2f2f7; margin-bottom: 10px; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; margin-left: 8px; vertical-align: middle; }
+  .badge-ok { background: #16a34a22; color: #4ade80; border: 1px solid #16a34a55; }
+  .badge-warn { background: #d9770622; color: #fbbf24; border: 1px solid #d9770655; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #2a2a38; font-size: 0.88rem; }
+  th { color: #8e8ea0; font-weight: 600; }
+  td code { background: #20202c; padding: 2px 6px; border-radius: 4px; font-size: 0.82rem; color: #a5b4fc; }
+  .pass { color: #4ade80; }
+  .fail { color: #ff6b6b; }
+  .summary { display: flex; gap: 16px; margin-bottom: 18px; flex-wrap: wrap; }
+  .stat { flex: 1; min-width: 160px; background: #191922; border: 1px solid #2a2a38; border-radius: 10px; padding: 16px 20px; text-align: center; }
+  .stat .num { font-size: 1.8rem; font-weight: 700; }
+  .stat .label { font-size: 0.78rem; color: #8e8ea0; margin-top: 2px; }
+  ul { padding-left: 18px; margin-top: 8px; }
+  li { margin-bottom: 4px; font-size: 0.88rem; }
+  .footer { text-align: center; color: #5a5a70; font-size: 0.75rem; margin-top: 32px; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>Laporan Fitur: Perkuat PIN + Rate Limit</h1>
+<p class="subtitle">CLAUDEPAD-2 &middot; Commit <code>a002ad6</code> &middot; 22 Juli 2026</p>
+
+<div class="summary">
+  <div class="stat"><div class="num pass">5/5</div><div class="label">CI Jobs Passed</div></div>
+  <div class="stat"><div class="num" style="color:#7c6cff">66</div><div class="label">Baris Ditambah</div></div>
+  <div class="stat"><div class="num" style="color:#ff6b6b">10</div><div class="label">Baris Dihapus</div></div>
+  <div class="stat"><div class="num" style="color:#fbbf24">5</div><div class="label">File Diubah</div></div>
+</div>
+
+<!-- Ringkasan -->
+<div class="card">
+  <h2>Ringkasan Perubahan</h2>
+  <table>
+    <tr><th>Aspek</th><th>Sebelum</th><th>Sesudah</th></tr>
+    <tr><td>Panjang PIN</td><td>4 digit (10.000 kombinasi)</td><td><strong>8 digit (100 juta kombinasi)</strong></td></tr>
+    <tr><td>Rate limiting</td><td>Tidak ada</td><td><strong>Max 3 gagal / 60 detik → blokir 30 detik</strong></td></tr>
+    <tr><td>Error feedback ke HP</td><td>"pin salah"</td><td><strong>"pin salah" + "rate_limit" + "version"</strong></td></tr>
+  </table>
+</div>
+
+<!-- File yang diubah -->
+<div class="card">
+  <h2>File yang Diubah</h2>
+  <table>
+    <tr><th>File</th><th>Perubahan</th></tr>
+    <tr><td><code>server/input_core.py</code></td><td>PIN 8 digit + 3 fungsi rate limiting (<code>check_rate_limit</code>, <code>record_failed_attempt</code>, <code>reset_failed_attempts</code>)</td></tr>
+    <tr><td><code>server/pc_server.py</code></td><td>Integrasikan rate limit di auth flow, import fungsi baru, reset saat berhasil</td></tr>
+    <tr><td><code>android/.../activity_main.xml</code></td><td><code>maxLength="8"</code>, <code>hint="pin (8 digit)"</code></td></tr>
+    <tr><td><code>android/.../WsClient.kt</code></td><td>Handle <code>auth_fail</code> reason <code>"rate_limit"</code> dengan pesan yang sesuai</td></tr>
+    <tr><td><code>.github/workflows/build-apk.yml</code></td><td>Update assert <code>len(core.new_pin()) == 8</code></td></tr>
+  </table>
+</div>
+
+<!-- CI Results -->
+<div class="card">
+  <h2>Hasil CI <span class="badge badge-ok">ALL PASSED</span></h2>
+  <table>
+    <tr><th>Job</th><th>Status</th><th>Waktu</th></tr>
+    <tr><td>verify-server (websockets 12.0)</td><td class="pass">PASSED</td><td>8s</td></tr>
+    <tr><td>verify-server (websockets 13.1)</td><td class="pass">PASSED</td><td>9s</td></tr>
+    <tr><td>verify-server (websockets 15.0.1)</td><td class="pass">PASSED</td><td>9s</td></tr>
+    <tr><td>build (APK)</td><td class="pass">PASSED</td><td>2m38s</td></tr>
+    <tr><td>build-server-exe</td><td class="pass">PASSED</td><td>1m4s</td></tr>
+  </table>
+</div>
+
+<!-- Testing -->
+<div class="card">
+  <h2>Pengujian</h2>
+  <table>
+    <tr><th>Test</th><th>Hasil</th></tr>
+    <tr><td>PIN generates 8 digit</td><td class="pass">PASSED</td></tr>
+    <tr><td>Rate limit: 3 gagal → blokir</td><td class="pass">PASSED</td></tr>
+    <tr><td>Rate limit: reset setelah berhasil</td><td class="pass">PASSED</td></tr>
+    <tr><td>RFC 8439 ChaCha20 test vector</td><td class="pass">PASSED</td></tr>
+    <tr><td>26 varian pesan protokol</td><td class="pass">PASSED</td></tr>
+    <tr><td>E2E WebSocket lifecycle</td><td class="pass">PASSED</td></tr>
+    <tr><td>Pairing token cycle</td><td class="pass">PASSED</td></tr>
+    <tr><td>Enkripsi end-to-end</td><td class="pass">PASSED</td></tr>
+    <tr><td>Discovery UDP</td><td class="pass">PASSED</td></tr>
+    <tr><td>Health HTTP endpoint</td><td class="pass">PASSED</td></tr>
+    <tr><td>Virtual adapter filter</td><td class="pass">PASSED</td></tr>
+  </table>
+</div>
+
+<!-- Alur Rate Limiting -->
+<div class="card">
+  <h2>Alur Rate Limiting</h2>
+  <ul>
+    <li>Client kirim <code>auth</code> → Server panggil <code>check_rate_limit(ip)</code></li>
+    <li>Jika <strong>diblokir</strong>: server balas <code>{"t":"auth_fail","reason":"rate_limit"}</code></li>
+    <li>Jika <strong>diizinkan</strong>: verifikasi PIN →</li>
+      <ul>
+        <li>Benar → <code>reset_failed_attempts(ip)</code> → <code>auth_ok</code></li>
+        <li>Salah → <code>record_failed_attempt(ip)</code> → <code>{"t":"auth_fail","reason":"pin"}</code></li>
+      </ul>
+    <li>HP menampilkan pesan yang sesuai berdasarkan <code>reason</code></li>
+  </ul>
+</div>
+
+<!-- Catatan -->
+<div class="card">
+  <h2>Catatan</h2>
+  <ul>
+    <li>Tidak ada breaking change — server lama menerima PIN 4 digit dari APK lama</li>
+    <li>APK baru tetap bisa konek ke server lama (PIN dikirim apa adanya)</li>
+    <li>Pengguna perlu mengetik ulang PIN baru di HP setelah update server</li>
+    <li>Token pairing yang sudah ada tetap berlaku — tidak perlu pairing ulang</li>
+  </ul>
+</div>
+
+<p class="footer">CLAUDEPAD-2 Feature Report &middot; Generated by AI Agent</p>
+</div>
+</body>
+</html>

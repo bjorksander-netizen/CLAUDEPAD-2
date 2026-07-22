@@ -11,6 +11,7 @@ Butuh:     pip install websockets pycaw comtypes pystray pillow
 """
 
 import asyncio
+import base64
 import http
 import json
 import os
@@ -35,26 +36,71 @@ from input_core import (CLIENTS, LOGQ, WS_PORT, HOSTNAME, log, local_ips,
                         fix_firewall, check_rate_limit, record_failed_attempt,
                         reset_failed_attempts)
 
-APP_VERSION = "3.1"
+APP_VERSION = "3.2"
+
+# RSA-2048 keypair: digenerate sekali saat server start.
+# Public key dikirim ke HP di hello_ok supaya HP bisa mengenkripsi PIN.
+# Private key hanya ada di server, tidak pernah dikirim.
+_RSA_KEYPAIR = None  # (pub_pem, private_key) — diinisialisasi di start_server_thread
+
+
+def _ensure_rsa_keypair():
+    global _RSA_KEYPAIR
+    if _RSA_KEYPAIR is None:
+        _RSA_KEYPAIR = crypto_box.generate_rsa_keypair()
+    return _RSA_KEYPAIR
 
 # Token perangkat tepercaya: sekali dipasangkan, HP tidak perlu mengetik PIN
-# lagi. Disimpan di samping berkas server dalam berkas teks sederhana.
-PAIR_FILE = data_path("paired.txt")
+# lagi. v3.2: disimpan di Windows Credential Manager lewat keyring,
+# bukan lagi di paired.txt (plain text).
+try:
+    import keyring as _keyring
+    _KEYRING_AVAILABLE = True
+except ImportError:
+    _KEYRING_AVAILABLE = False
+
+_KEYRING_SERVICE = "claudepad"
+_KEYRING_USER = "paired_tokens"
+_PAIR_FILE = data_path("paired.txt")  # fallback jika keyring tidak tersedia
 
 
 def load_tokens():
+    """Muat semua token pairing dari penyimpanan."""
+    if _KEYRING_AVAILABLE:
+        try:
+            raw = _keyring.get_password(_KEYRING_SERVICE, _KEYRING_USER)
+            if raw:
+                return {t for t in raw.splitlines() if t.strip()}
+        except Exception:
+            pass
+    # Fallback: baca dari paired.txt (migrasi dari v3.1 ke bawah)
     try:
-        with open(PAIR_FILE, "r", encoding="utf-8") as f:
+        with open(_PAIR_FILE, "r", encoding="utf-8") as f:
             return {l.strip() for l in f if l.strip()}
     except OSError:
         return set()
 
 
 def save_token(token):
+    """Simpan token pairing baru. Migrasi otomatis dari paired.txt ke keyring."""
+    tokens = load_tokens()
+    tokens.add(token)
+    if _KEYRING_AVAILABLE:
+        try:
+            _keyring.set_password(_KEYRING_SERVICE, _KEYRING_USER,
+                                  "\n".join(sorted(tokens)))
+            # Hapus paired.txt setelah migrasi berhasil
+            try:
+                if os.path.exists(_PAIR_FILE):
+                    os.remove(_PAIR_FILE)
+            except OSError:
+                pass
+            return True
+        except Exception as e:
+            log(f"[!] keyring gagal, fallback ke file: {e}")
+    # Fallback ke paired.txt
     try:
-        tokens = load_tokens()
-        tokens.add(token)
-        with open(PAIR_FILE, "w", encoding="utf-8") as f:
+        with open(_PAIR_FILE, "w", encoding="utf-8") as f:
             f.write("\n".join(sorted(tokens)))
         return True
     except OSError as e:
@@ -63,9 +109,15 @@ def save_token(token):
 
 
 def forget_tokens():
+    """Hapus semua token pairing."""
+    if _KEYRING_AVAILABLE:
+        try:
+            _keyring.delete_password(_KEYRING_SERVICE, _KEYRING_USER)
+        except Exception:
+            pass
     try:
-        if os.path.exists(PAIR_FILE):
-            os.remove(PAIR_FILE)
+        if os.path.exists(_PAIR_FILE):
+            os.remove(_PAIR_FILE)
         log("[i] Semua perangkat tepercaya dilupakan")
         return True
     except OSError:
@@ -139,11 +191,15 @@ async def handle(ws):
             # Kunci sesi TIDAK pernah dikirim: kedua pihak menurunkannya
             # sendiri dari PIN atau token pairing yang sudah sama-sama
             # diketahui, memakai garam ini.
+            # v3.2: server juga mengirim public key RSA supaya HP bisa
+            # mengenkripsi PIN/token saat auth (proteksi transit).
             if not authed and m.get("t") == "hello":
                 pending_salt[0] = crypto_box.new_salt()
+                pub_pem, _ = _ensure_rsa_keypair()
                 await ws.send(json.dumps({
                     "t": "hello_ok",
                     "salt": pending_salt[0].hex(),
+                    "pubkey": crypto_box.rsa_pubkey_to_b64(pub_pem),
                     "version": APP_VERSION,
                 }))
                 continue
@@ -167,9 +223,44 @@ async def handle(ws):
                         }))
                         log(f"[!] {peer} ditolak: versi APK '{app_ver}' != server {APP_VERSION}")
                         continue
-                token = str(m.get("token", ""))
+
+                # v3.2: Ekstrak PIN/token — terenkripsi (RSA) atau plain.
+                # Default dari field plain, lalu override jika pin_enc/token_enc ada.
+                pin_plain = str(m.get("pin", ""))
+                token_plain = str(m.get("token", ""))
+
+                if m.get("t") == "auth":
+                    _, priv_key = _ensure_rsa_keypair()
+
+                    pin_enc_b64 = m.get("pin_enc")
+                    if pin_enc_b64:
+                        try:
+                            pin_plain = crypto_box.rsa_decrypt(
+                                priv_key,
+                                __import__("base64").b64decode(pin_enc_b64)
+                            ).decode("utf-8")
+                        except Exception as e:
+                            log(f"[!] {peer} gagal dekripsi pin_enc: {e}")
+                            record_failed_attempt(peer)
+                            await ws.send(json.dumps({"t": "auth_fail", "reason": "pin"}))
+                            continue
+
+                    token_enc_b64 = m.get("token_enc")
+                    if token_enc_b64:
+                        try:
+                            token_plain = crypto_box.rsa_decrypt(
+                                priv_key,
+                                __import__("base64").b64decode(token_enc_b64)
+                            ).decode("utf-8")
+                        except Exception as e:
+                            log(f"[!] {peer} gagal dekripsi token_enc: {e}")
+                            record_failed_attempt(peer)
+                            await ws.send(json.dumps({"t": "auth_fail", "reason": "pin"}))
+                            continue
+
+                token = token_plain
                 by_token = bool(token) and token in load_tokens()
-                by_pin = str(m.get("pin", "")) == core.PIN
+                by_pin = pin_plain == core.PIN
 
                 if m.get("t") == "auth" and (by_pin or by_token):
                     authed = True

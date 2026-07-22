@@ -19,10 +19,21 @@ Ini bukan pengganti TLS untuk internet terbuka, tetapi menutup penyadapan
 dan pengubahan lalu lintas di jaringan lokal — yang memang lingkup CLAUDEPAD.
 """
 
+import base64
 import hashlib
 import hmac
 import os
 import struct
+
+try:
+    from cryptography.hazmat.primitives.asymmetric import rsa as _rsa
+    from cryptography.hazmat.primitives.asymmetric import padding as _asym_padding
+    from cryptography.hazmat.primitives import hashes as _hashes
+    from cryptography.hazmat.primitives import serialization as _serialization
+    from cryptography.hazmat.backends import default_backend as _default_backend
+    HAS_CRYPTOGRAPHY = True
+except ImportError:
+    HAS_CRYPTOGRAPHY = False
 
 KEY_LEN = 32
 NONCE_LEN = 16
@@ -114,3 +125,64 @@ class Session:
 
 def new_salt() -> bytes:
     return os.urandom(NONCE_LEN)
+
+
+# -------------------------------------------------------- RSA-2048 ---------
+def generate_rsa_keypair():
+    """Generate RSA-2048 keypair. Returns (public_key_pem, private_key).
+
+    Dipanggil sekali saat server start. Public key dikirim ke HP di hello_ok,
+    private key dipakai server untuk mendekripsi PIN/token dari HP.
+    """
+    if not HAS_CRYPTOGRAPHY:
+        raise RuntimeError("modul 'cryptography' belum terpasang — jalankan: pip install cryptography")
+    private_key = _rsa.generate_private_key(
+        public_exponent=65537,
+        key_size=2048,
+        backend=_default_backend(),
+    )
+    pub_pem = private_key.public_key().public_bytes(
+        encoding=_serialization.Encoding.PEM,
+        format=_serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    return pub_pem, private_key
+
+
+def rsa_encrypt(pub_pem: bytes, data: bytes) -> bytes:
+    """Enkripsi data dengan RSA public key (OAEP + SHA-256)."""
+    public_key = _serialization.load_pem_public_key(pub_pem, backend=_default_backend())
+    return public_key.encrypt(
+        data,
+        _asym_padding.OAEP(
+            mgf=_asym_padding.MGF1(algorithm=_hashes.SHA256()),
+            algorithm=_hashes.SHA256(),
+            label=None,
+        ),
+    )
+
+
+def rsa_decrypt(private_key, encrypted: bytes) -> bytes:
+    """Dekripsi data dengan RSA private key (OAEP + SHA-256)."""
+    return private_key.decrypt(
+        encrypted,
+        _asym_padding.OAEP(
+            mgf=_asym_padding.MGF1(algorithm=_hashes.SHA256()),
+            algorithm=_hashes.SHA256(),
+            label=None,
+        ),
+    )
+
+
+def rsa_pubkey_to_b64(pub_pem: bytes) -> str:
+    """Konversi public key PEM ke base64 (tanpa header PEM)."""
+    lines = pub_pem.decode("ascii").splitlines()
+    raw = "".join(l for l in lines if not l.startswith("-----"))
+    return raw
+
+
+def rsa_pubkey_from_b64(b64: str) -> bytes:
+    """Konversi base64 kembali ke public key PEM."""
+    header = "-----BEGIN PUBLIC KEY-----"
+    footer = "-----END PUBLIC KEY-----"
+    raw = b64.strip()
+    return (header + "\n" + raw + "\n" + footer).encode("ascii")

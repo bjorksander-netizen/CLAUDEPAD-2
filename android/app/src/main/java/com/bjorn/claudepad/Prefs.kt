@@ -1,12 +1,34 @@
 package com.bjorn.claudepad
 
 import android.content.Context
+import android.content.SharedPreferences
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 
-/** Penyimpanan setting sederhana. */
+/**
+ * Penyimpanan setting sederhana.
+ * v3.2: Token disimpan di EncryptedSharedPreferences (enkripsi at-rest).
+ */
 object Prefs {
     private const val NAME = "claudepad"
+    private const val SECURE_NAME = "claudepad_secure"
 
-    private fun sp(ctx: Context) = ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+    private fun sp(ctx: Context): SharedPreferences =
+        ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+
+    /** EncryptedSharedPreferences untuk data sensitif (token pairing). */
+    private fun secureSp(ctx: Context): SharedPreferences {
+        val masterKey = MasterKey.Builder(ctx)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+        return EncryptedSharedPreferences.create(
+            ctx,
+            SECURE_NAME,
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+        )
+    }
 
     fun hapticEnabled(ctx: Context) = sp(ctx).getBoolean("haptic", true)
     fun setHaptic(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("haptic", v).apply()
@@ -58,8 +80,18 @@ object Prefs {
         sp(ctx).edit().putBoolean("show_taps", v).apply()
 
     /** Token perangkat tepercaya — supaya PIN tidak perlu diketik ulang. */
-    fun token(ctx: Context): String = sp(ctx).getString("token", "") ?: ""
-    fun setToken(ctx: Context, v: String) = sp(ctx).edit().putString("token", v).apply()
+    fun token(ctx: Context): String {
+        // Migrasi: baca dari storage lama jika ada, lalu pindah ke encrypted
+        val legacy = sp(ctx).getString("token", "") ?: ""
+        if (legacy.isNotEmpty()) {
+            secureSp(ctx).edit().putString("token", legacy).apply()
+            sp(ctx).edit().remove("token").apply()
+            return legacy
+        }
+        return secureSp(ctx).getString("token", "") ?: ""
+    }
+    fun setToken(ctx: Context, v: String) =
+        secureSp(ctx).edit().putString("token", v).apply()
 
     /** MAC PC terakhir, dipakai Wake-on-LAN (eksperimental). */
     fun mac(ctx: Context): String = sp(ctx).getString("mac", "") ?: ""

@@ -28,7 +28,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependency server
-        run: pip install "websockets==${{ matrix.websockets }}"
+        run: pip install "websockets==${{ matrix.websockets }}" cryptography keyring
 
       - name: Uji kripto vs RFC 8439
         working-directory: server
@@ -49,6 +49,26 @@ jobs:
           try: c.open(a.seal(b"x")); raise SystemExit("kunci salah lolos!")
           except ValueError: pass
           print("OK - ChaCha20 cocok RFC 8439, seal/open & tolak kunci salah")
+
+          # v3.2: Uji RSA-2048 keypair + encrypt/decrypt
+          import base64
+          pub_pem, priv_key = cb.generate_rsa_keypair()
+          assert cb.HAS_CRYPTOGRAPHY, "modul cryptography harus tersedia"
+          test_data = b"12345678"
+          encrypted = cb.rsa_encrypt(pub_pem, test_data)
+          decrypted = cb.rsa_decrypt(priv_key, encrypted)
+          assert decrypted == test_data, f"RSA decrypt gagal: {decrypted}"
+          # Uji via base64 round-trip (seperti yang dilakukan HP)
+          b64_key = cb.rsa_pubkey_to_b64(pub_pem)
+          assert len(b64_key) > 100, "pubkey base64 terlalu pendek"
+          pub_pem2 = cb.rsa_pubkey_from_b64(b64_key)
+          assert pub_pem2 == pub_pem, "pubkey round-trip gagal"
+          # Uji token panjang juga muat di RSA
+          token_data = b"a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
+          enc_token = cb.rsa_encrypt(pub_pem, token_data)
+          dec_token = cb.rsa_decrypt(priv_key, enc_token)
+          assert dec_token == token_data
+          print("OK - RSA-2048 keypair, encrypt/decrypt, base64 round-trip")
           PY
 
       - name: Uji dispatch protokol
@@ -169,8 +189,19 @@ jobs:
                   await we.send(json.dumps({"t":"hello"}))
                   h = json.loads(await we.recv())
                   assert h["t"] == "hello_ok" and "salt" in h, h
+                  assert "pubkey" in h, "v3.2 harus mengirim pubkey"
                   salt = bytes.fromhex(h["salt"])
-                  await we.send(json.dumps({"t":"auth","pin":core.PIN,"ver":srv.APP_VERSION}))
+                  # v3.2: enkripsi PIN dengan RSA sebelum kirim auth
+                  import base64
+                  enc_pin = cb.rsa_encrypt(
+                      cb.rsa_pubkey_from_b64(h["pubkey"]),
+                      core.PIN.encode("utf-8"))
+                  auth_msg = {
+                      "t": "auth",
+                      "pin_enc": base64.b64encode(enc_pin).decode(),
+                      "ver": srv.APP_VERSION,
+                  }
+                  await we.send(json.dumps(auth_msg))
                   a = json.loads(await we.recv())
                   assert a["t"] == "auth_ok" and a["encrypted"] is True, a
                   box = cb.Session.derive(core.PIN, salt)
@@ -178,7 +209,41 @@ jobs:
                   raw = await we.recv()
                   assert isinstance(raw, (bytes, bytearray)), "balasan harus terenkripsi"
                   assert json.loads(box.open(raw).decode())["t"] == "pong"
-              print("OK - enkripsi lalu lintas end-to-end")
+              print("OK - enkripsi lalu lintas end-to-end (RSA auth + ChaCha20 session)")
+
+              # v3.2: uji auth dengan token terenkripsi RSA
+              async with websockets.connect("ws://127.0.0.1:8765/ws") as wt:
+                  await wt.send(json.dumps({"t":"hello"}))
+                  ht = json.loads(await wt.recv())
+                  enc_pin2 = cb.rsa_encrypt(
+                      cb.rsa_pubkey_from_b64(ht["pubkey"]),
+                      core.PIN.encode("utf-8"))
+                  await wt.send(json.dumps({
+                      "t": "auth",
+                      "pin_enc": base64.b64encode(enc_pin2).decode(),
+                      "ver": srv.APP_VERSION,
+                  }))
+                  at = json.loads(await wt.recv())
+                  tok2 = at.get("token", "")
+                  assert tok2, "server harus memberi token"
+                  # pakai token terenkripsi
+                  enc_tok = cb.rsa_encrypt(
+                      cb.rsa_pubkey_from_b64(ht["pubkey"]),
+                      tok2.encode("utf-8"))
+              async with websockets.connect("ws://127.0.0.1:8765/ws") as wt2:
+                  await wt2.send(json.dumps({"t":"hello"}))
+                  ht2 = json.loads(await wt2.recv())
+                  enc_tok2 = cb.rsa_encrypt(
+                      cb.rsa_pubkey_from_b64(ht2["pubkey"]),
+                      tok2.encode("utf-8"))
+                  await wt2.send(json.dumps({
+                      "t": "auth",
+                      "token_enc": base64.b64encode(enc_tok2).decode(),
+                      "ver": srv.APP_VERSION,
+                  }))
+                  at2 = json.loads(await wt2.recv())
+                  assert at2["t"] == "auth_ok", at2
+              print("OK - pairing token terenkripsi RSA diterima")
 
               await asyncio.sleep(0.4)
               assert len(core.CLIENTS) == 0
@@ -338,7 +403,7 @@ jobs:
         working-directory: server
         run: |
           python -m pip install --upgrade pip
-          pip install websockets pycaw comtypes pystray pillow pyinstaller
+          pip install websockets pycaw comtypes pystray pillow pyinstaller cryptography keyring
 
       - name: Baca versi server
         id: sver

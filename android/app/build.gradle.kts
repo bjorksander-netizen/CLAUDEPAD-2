@@ -11,8 +11,8 @@ android {
         applicationId = "com.bjorn.claudepad"
         minSdk = 24
         targetSdk = 34
-        versionCode = 16
-        versionName = "3.1"
+        versionCode = 17
+        versionName = "3.2"
     }
 
     buildTypes {
@@ -36,6 +36,9 @@ dependencies {
     // Architecture Components — ViewModel + lifecycle-aware StateFlow collection
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+
+    // v3.2: Enkripsi penyimpanan token (EncryptedSharedPreferences)
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
 }
 
 // Catatan font:
