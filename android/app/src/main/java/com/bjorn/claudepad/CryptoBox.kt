@@ -60,7 +60,7 @@ class CryptoBox private constructor(key: ByteArray) {
                 OAEPParameterSpec(
                     "SHA-256", "MGF1",
                     MGF1ParameterSpec("SHA-256"),
-                    PSource.PSpecified.EMPTY
+                    PSource.PSpecified(ByteArray(0))
                 )
             )
             return cipher.doFinal(data)
