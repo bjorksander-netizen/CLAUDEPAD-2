@@ -62,7 +62,12 @@ jobs:
           b64_key = cb.rsa_pubkey_to_b64(pub_pem)
           assert len(b64_key) > 100, "pubkey base64 terlalu pendek"
           pub_pem2 = cb.rsa_pubkey_from_b64(b64_key)
-          assert pub_pem2 == pub_pem, "pubkey round-trip gagal"
+          from cryptography.hazmat.primitives.serialization import load_pem_public_key
+          from cryptography.hazmat.backends import default_backend
+          k1 = load_pem_public_key(pub_pem, backend=default_backend())
+          k2 = load_pem_public_key(pub_pem2, backend=default_backend())
+          # Bandingkan key objects, bukan bytes PEM (newline bisa beda)
+          assert k1.public_numbers() == k2.public_numbers(), "pubkey round-trip gagal"
           # Uji token panjang juga muat di RSA
           token_data = b"a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
           enc_token = cb.rsa_encrypt(pub_pem, token_data)
