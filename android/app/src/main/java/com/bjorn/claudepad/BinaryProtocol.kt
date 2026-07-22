@@ -54,7 +54,7 @@ object BinaryProtocol {
     private val POWER_IDS = mapOf("shutdown" to 0, "restart" to 1, "sleep" to 2, "lock" to 3)
     private val POWER_NAMES = POWER_IDS.entries.associate { (k, v) -> v to k }
 
-    private val VK_IDS = mapOf(
+    private val VK_IDS = mutableMapOf(
         "enter" to 0x0D, "esc" to 0x1B, "tab" to 0x09, "backspace" to 0x08,
         "delete" to 0x2E, "space" to 0x20, "up" to 0x26, "down" to 0x28,
         "left" to 0x25, "right" to 0x27, "home" to 0x24, "end" to 0x23,
@@ -62,12 +62,14 @@ object BinaryProtocol {
         "alt" to 0x12, "shift" to 0x10, "insert" to 0x2D, "capslock" to 0x14,
         "printscreen" to 0x2C, "d" to 0x44
     )
-    private val VK_NAMES = VK_IDS.entries.associate { (k, v) -> v to k }
+    private val VK_NAMES = mutableMapOf<Int, String>()
 
     init {
         for (i in 1..13) {
             VK_IDS["f$i"] = 0x6F + i
-            VK_NAMES[0x6F + i] = "f$i"
+        }
+        for ((k, v) in VK_IDS) {
+            VK_NAMES[v] = k
         }
     }
 
