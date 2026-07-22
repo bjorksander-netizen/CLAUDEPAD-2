@@ -306,10 +306,13 @@ object WsClient {
             }
             "auth_fail" -> {
                 connected = false
-                val msg = if (o.optString("reason") == "version") {
-                    "versi tidak cocok — server v" + o.optString("server", "?") +
+                val reason = o.optString("reason")
+                val msg = when (reason) {
+                    "version" -> "versi tidak cocok — server v" + o.optString("server", "?") +
                         ", apk v" + o.optString("app", "?") + ". samakan dulu keduanya."
-                } else "pin salah"
+                    "rate_limit" -> "terlalu banyak percobaan gagal — tunggu sebentar lalu coba lagi"
+                    else -> "pin salah"
+                }
                 _connectionState.value = ConnectionState.Error(msg)
                 onState?.invoke(false, msg)
                 webSocket.close(1000, null)

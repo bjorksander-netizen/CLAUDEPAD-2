@@ -58,13 +58,13 @@
                 android:layout_height="50dp"
                 android:layout_marginTop="8dp"
                 android:background="@drawable/glass_input"
-                android:hint="pin"
+                android:hint="pin (8 digit)"
                 android:textColorHint="@color/text_muted"
                 android:textColor="@color/text"
                 android:textSize="15sp"
                 android:paddingHorizontal="14dp"
                 android:inputType="number"
-                android:maxLength="4"
+                android:maxLength="8"
                 android:maxLines="1"
                 android:importantForAutofill="no" />
 

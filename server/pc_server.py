@@ -32,7 +32,8 @@ import crypto_box
 from input_core import (CLIENTS, LOGQ, WS_PORT, HOSTNAME, log, local_ips,
                         local_ips_detailed, enable_usb_mode, discovery_loop,
                         handle_message, volume_get, firewall_status,
-                        fix_firewall)
+                        fix_firewall, check_rate_limit, record_failed_attempt,
+                        reset_failed_attempts)
 
 APP_VERSION = "3.1"
 
@@ -149,6 +150,14 @@ async def handle(ws):
 
             if not authed:
                 if m.get("t") == "auth":
+                    # Rate limiting: blokir jika terlalu banyak gagal
+                    if not check_rate_limit(peer):
+                        await ws.send(json.dumps({
+                            "t": "auth_fail", "reason": "rate_limit",
+                        }))
+                        log(f"[!] {peer} diblokir: terlalu banyak percobaan gagal")
+                        continue
+
                     # Kunci versi: APK dan server harus sama persis.
                     app_ver = str(m.get("ver", ""))
                     if app_ver != APP_VERSION:
@@ -165,6 +174,7 @@ async def handle(ws):
                 if m.get("t") == "auth" and (by_pin or by_token):
                     authed = True
                     CLIENTS[peer] = transport
+                    reset_failed_attempts(peer)
 
                     # Beri token baru saat masuk memakai PIN, supaya lain kali
                     # HP bisa langsung tersambung tanpa mengetik PIN lagi.
@@ -193,7 +203,8 @@ async def handle(ws):
                     log(f"[+] {peer} terautentikasi"
                         + (" (token tersimpan)" if new_token else
                            " (token tepercaya)" if by_token else ""))
-                else:
+                elif m.get("t") == "auth":
+                    record_failed_attempt(peer)
                     await ws.send(json.dumps({"t": "auth_fail", "reason": "pin"}))
                     log(f"[!] {peer} PIN salah")
                 continue

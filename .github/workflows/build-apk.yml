@@ -73,7 +73,7 @@ jobs:
           ]
           for m in msgs:
               core.handle_message(m, sent.append)
-          assert len(core.new_pin()) == 4
+          assert len(core.new_pin()) == 8
           assert core.VK["win"] == 0x5B and "d" in core.VK
           print(f"OK - {len(msgs)} varian pesan diproses tanpa crash")
           PY

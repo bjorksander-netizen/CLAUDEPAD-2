@@ -7,6 +7,7 @@ Dipisah dari GUI supaya mudah diuji dan dipakai ulang.
 import ctypes
 import json
 import os
+import time
 from paths import resource_path, data_path
 import queue
 import random
@@ -30,16 +31,57 @@ import system_ctl
 WS_PORT = 8765
 DISCOVERY_PORT = 8766
 
-PIN = f"{random.randint(0, 9999):04d}"
+PIN = f"{random.randint(0, 99999999):08d}"
 CLIENTS = {}          # peer -> transport ("wifi" / "usb")
 LOGQ = queue.Queue()
 HOSTNAME = socket.gethostname()
 
+# ── Rate limiting: anti brute-force PIN ──
+FAILED_ATTEMPTS = {}  # ip -> [(waktu_gagal, ...)]
+MAX_FAILED = 3        # maksimal percobaan gagal dalam jendela waktu
+LOCKOUT_SECONDS = 30  # durasi blokir setelah MAX_FAILED
+WINDOW_SECONDS = 60   # jendela waktu untuk menghitung gagal
+
 
 def new_pin():
     global PIN
-    PIN = f"{random.randint(0, 9999):04d}"
+    PIN = f"{random.randint(0, 99999999):08d}"
     return PIN
+
+
+def check_rate_limit(ip):
+    """Kembalikan True jika IP boleh mencoba autentikasi, False jika diblokir."""
+    now = time.time()
+    attempts = FAILED_ATTEMPTS.get(ip, [])
+
+    # Bersihkan percobaan luar jendela waktu
+    attempts = [t for t in attempts if now - t < WINDOW_SECONDS]
+    FAILED_ATTEMPTS[ip] = attempts
+
+    if len(attempts) >= MAX_FAILED:
+        elapsed = now - attempts[0]
+        if elapsed < LOCKOUT_SECONDS:
+            remaining = int(LOCKOUT_SECONDS - elapsed)
+            log(f"[!] {ip} diblokir {remaining}s lagi ({len(attempts)} gagal)")
+            return False
+        # Jendela sudah expired, bersihkan
+        FAILED_ATTEMPTS[ip] = []
+        return True
+    return True
+
+
+def record_failed_attempt(ip):
+    """Catat percobaan gagal untuk IP tertentu."""
+    now = time.time()
+    attempts = FAILED_ATTEMPTS.get(ip, [])
+    attempts.append(now)
+    FAILED_ATTEMPTS[ip] = attempts
+    log(f"[!] {ip} gagal autentikasi ({len(attempts)}/{MAX_FAILED})")
+
+
+def reset_failed_attempts(ip):
+    """Reset counter gagal setelah berhasil autentikasi."""
+    FAILED_ATTEMPTS.pop(ip, None)
 
 
 def log(msg):
