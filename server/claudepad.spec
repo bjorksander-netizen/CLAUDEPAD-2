@@ -9,7 +9,7 @@ a = Analysis(
     # fix_firewall.bat dibundel sebagai data read-only (dicari via _MEIPASS)
     datas=[('fix_firewall.bat', '.')],
     hiddenimports=[
-        'input_core', 'system_ctl', 'crypto_box', 'paths',
+        'input_core', 'system_ctl', 'crypto_box', 'paths', 'binary_protocol',
         'pycaw', 'comtypes', 'pystray', 'PIL', 'websockets',
     ],
     hookspath=[],

@@ -76,7 +76,91 @@ jobs:
           print("OK - RSA-2048 keypair, encrypt/decrypt, base64 round-trip")
           PY
 
-      - name: Uji dispatch protokol
+      - name: Uji binary protocol encode/decode
+        working-directory: server
+        run: |
+          python - <<'PY'
+          import binary_protocol as bp
+
+          # Test semua command yang bisa di-encode
+          cases = [
+              {"t":"move","dx":5,"dy":-3},
+              {"t":"click","b":"left"},
+              {"t":"click","b":"right","double":True},
+              {"t":"down","b":"left"},
+              {"t":"up","b":"middle"},
+              {"t":"scroll","dy":120,"dx":-50},
+              {"t":"zoom","dir":1},
+              {"t":"zoom","dir":-1},
+              {"t":"gesture","g":"taskview"},
+              {"t":"gesture","g":"showdesktop"},
+              {"t":"gesture","g":"appnext"},
+              {"t":"gesture","g":"appprev"},
+              {"t":"text","s":"halo dunia"},
+              {"t":"key","k":"enter"},
+              {"t":"key","k":"tab","mods":["win"]},
+              {"t":"key","k":"c","mods":["ctrl"]},
+              {"t":"media","a":"playpause"},
+              {"t":"media","a":"volup"},
+              {"t":"volset","v":73},
+              {"t":"volget"},
+              {"t":"radio","d":"wifi"},
+              {"t":"radio","d":"bluetooth"},
+              {"t":"power","a":"shutdown"},
+              {"t":"power","a":"lock"},
+              {"t":"bright","d":10},
+              {"t":"bright","d":-5},
+              {"t":"ping"},
+          ]
+
+          for msg in cases:
+              enc = bp.encode(msg)
+              assert enc is not None, f"gagal encode: {msg}"
+              dec = bp.decode(enc)
+              assert dec is not None, f"gagal decode: {msg}"
+              assert dec["t"] == msg["t"], f"t beda: {dec} vs {msg}"
+
+          # Khusus: verifikasi field inti
+          enc = bp.encode({"t":"move","dx":1000,"dy":-2000})
+          dec = bp.decode(enc)
+          assert dec["dx"] == 1000 and dec["dy"] == -2000
+
+          enc = bp.encode({"t":"click","b":"right","double":True})
+          dec = bp.decode(enc)
+          assert dec["b"] == "right" and dec["double"] == True
+
+          enc = bp.encode({"t":"volset","v":50})
+          dec = bp.decode(enc)
+          assert dec["v"] == 50
+
+          # Text panjang
+          long_text = "a" * 500
+          enc = bp.encode({"t":"text","s":long_text})
+          dec = bp.decode(enc)
+          assert dec["s"] == long_text
+
+          # Key dengan mod
+          enc = bp.encode({"t":"key","k":"c","mods":["ctrl"]})
+          dec = bp.decode(enc)
+          assert dec["k"] == "c" and "ctrl" in dec["mods"]
+
+          # Unknown command harus return None
+          assert bp.encode({"t":"unknown"}) is None
+          assert bp.encode({"t":"gesture","g":"bogus"}) is None
+
+          # Decode data rusak harus return None
+          assert bp.decode(b"") is None
+          assert bp.decode(b"\xff\x00") is None
+
+          # Ukuran paket: move harus 5 bytes (1+2+2)
+          assert len(bp.encode({"t":"move","dx":0,"dy":0})) == 5
+          # scroll harus 5 bytes
+          assert len(bp.encode({"t":"scroll","dy":120,"dx":0})) == 5
+
+          print(f"OK - {len(cases)} command diuji encode/decode round-trip")
+          PY
+
+      - name: Uji binary protocol E2E via WebSocket
         working-directory: server
         run: |
           python - <<'PY'
@@ -273,6 +357,39 @@ jobs:
               assert core._is_virtual("vEthernet (WSL)")
               assert not core._is_virtual("Wireless LAN adapter Wi-Fi")
               print("OK - filter adapter virtual")
+
+              # v3.3: uji binary protocol via WebSocket terenkripsi
+              import binary_protocol as bp
+              async with websockets.connect("ws://127.0.0.1:8765/ws") as wb:
+                  await wb.send(json.dumps({"t":"hello"}))
+                  hb = json.loads(await wb.recv())
+                  salt_b = bytes.fromhex(hb["salt"])
+                  enc_pin_b = cb.rsa_encrypt(
+                      cb.rsa_pubkey_from_b64(hb["pubkey"]),
+                      core.PIN.encode("utf-8"))
+                  await wb.send(json.dumps({
+                      "t": "auth",
+                      "pin_enc": base64.b64encode(enc_pin_b).decode(),
+                      "ver": srv.APP_VERSION,
+                      "binary": True,
+                  }))
+                  ab = json.loads(await wb.recv())
+                  assert ab["t"] == "auth_ok" and ab.get("binary") is True, ab
+                  box_b = cb.Session.derive(core.PIN, salt_b)
+
+                  # Kirim command via binary protocol
+                  bin_move = bp.encode({"t":"move","dx":5,"dy":-3})
+                  assert bin_move is not None
+                  await wb.send(box_b.seal(bin_move))
+
+                  bin_ping = bp.encode({"t":"ping"})
+                  await wb.send(box_b.seal(bin_ping))
+
+                  raw_b = await wb.recv()
+                  assert isinstance(raw_b, (bytes, bytearray))
+                  resp = json.loads(box_b.open(raw_b).decode())
+                  assert resp["t"] == "pong"
+              print("OK - binary protocol E2E (encode -> encrypt -> decrypt -> decode)")
 
           asyncio.run(main())
           PY

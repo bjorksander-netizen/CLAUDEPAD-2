@@ -106,6 +106,8 @@ object WsClient {
         private set
     private var crypto: CryptoBox? = null
     private var serverPubKey: String = ""  // v3.2: RSA public key dari server
+    @Volatile var binaryEnabled = false   // v3.3: binary protocol aktif
+        private set
 
     private var ws: WebSocket? = null
 
@@ -158,6 +160,7 @@ object WsClient {
         crypto = null
         encrypted = false
         serverPubKey = ""
+        binaryEnabled = false
         _reconnectingTo.value = null
         _connectionState.value = ConnectionState.Disconnected
         closeQuietly()
@@ -176,6 +179,15 @@ object WsClient {
     private fun send(o: JSONObject) {
         val sock = ws ?: return
         val box = crypto
+        // v3.3: pakai binary protocol kalau server mendukung
+        if (binaryEnabled) {
+            val bin = BinaryProtocol.encode(o)
+            if (bin != null && box != null && encrypted) {
+                try { sock.send(box.seal(bin).toByteString()) }
+                catch (e: Exception) { }
+                return
+            }
+        }
         if (box != null && encrypted) {
             try { sock.send(box.seal(o.toString().toByteArray()).toByteString()) }
             catch (e: Exception) { sock.send(o.toString()) }
@@ -277,6 +289,7 @@ object WsClient {
 
                 // Kirim auth — PIN/token dienkripsi RSA jika server punya pubkey.
                 val auth = JSONObject().put("t", "auth").put("ver", appVersion)
+                    .put("binary", true)  // v3.3: minta binary protocol
                 if (serverPubKey.isNotEmpty()) {
                     try {
                         val encPin = CryptoBox.encryptWithPublicKey(
@@ -312,6 +325,7 @@ object WsClient {
                 if (!o.isNull("vol")) volume = o.optInt("vol", 50)
                 macAddress = o.optString("mac", "")
                 encrypted = o.optBoolean("encrypted", false)
+                binaryEnabled = o.optBoolean("binary", false)  // v3.3
                 val fresh = o.optString("token", "")
 
                 // Emit ke StateFlow

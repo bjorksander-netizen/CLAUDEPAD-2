@@ -30,13 +30,14 @@ except ImportError:
 import input_core as core
 import system_ctl
 import crypto_box
+import binary_protocol
 from input_core import (CLIENTS, LOGQ, WS_PORT, HOSTNAME, log, local_ips,
                         local_ips_detailed, enable_usb_mode, discovery_loop,
                         handle_message, volume_get, firewall_status,
                         fix_firewall, check_rate_limit, record_failed_attempt,
                         reset_failed_attempts)
 
-APP_VERSION = "3.2"
+APP_VERSION = "3.3"
 
 # RSA-2048 keypair: digenerate sekali saat server start.
 # Public key dikirim ke HP di hello_ok supaya HP bisa mengenkripsi PIN.
@@ -144,6 +145,7 @@ def disconnect_clients():
 async def handle(ws):
     authed = False
     crypto = None          # Session bila klien memilih jalur terenkripsi
+    binary_enabled = False  # v3.3: binary protocol aktif
     peer = ws.remote_address[0] if ws.remote_address else "?"
     transport = "usb" if peer.startswith("127.") else "wifi"
     pending_salt = [None]      # garam handshake untuk koneksi ini
@@ -178,9 +180,23 @@ async def handle(ws):
             # Setelah handshake, pesan datang sebagai blob biner terenkripsi.
             if crypto is not None and isinstance(raw, (bytes, bytearray)):
                 try:
-                    raw = crypto.open(bytes(raw)).decode("utf-8")
+                    raw = crypto.open(bytes(raw))
                 except Exception as e:
                     log(f"[!] {peer} paket ditolak: {e}")
+                    continue
+                # v3.3: coba decode binary protocol dulu
+                if binary_enabled:
+                    try:
+                        m = binary_protocol.decode(raw)
+                    except Exception:
+                        m = None
+                    if m is not None:
+                        handle_message(m, reply)
+                        continue
+                # Fallback ke JSON
+                try:
+                    raw = raw.decode("utf-8")
+                except UnicodeDecodeError:
                     continue
             try:
                 m = json.loads(raw)
@@ -264,6 +280,7 @@ async def handle(ws):
 
                 if m.get("t") == "auth" and (by_pin or by_token):
                     authed = True
+                    binary_enabled = m.get("binary", False)
                     CLIENTS[peer] = transport
                     reset_failed_attempts(peer)
 
@@ -290,6 +307,7 @@ async def handle(ws):
                         "mac": system_ctl.mac_address(),
                         "token": new_token,
                         "encrypted": pending_salt[0] is not None,
+                        "binary": True,
                     }))
                     log(f"[+] {peer} terautentikasi"
                         + (" (token tersimpan)" if new_token else
