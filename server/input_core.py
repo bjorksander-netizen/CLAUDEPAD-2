@@ -348,14 +348,14 @@ def handle_message(m, reply):
     elif t == "ping":
         reply({"t": "pong"})
     elif t == "clipboard_request":
+        text = ""
         try:
             import pyperclip
-            text = pyperclip.paste()
-            if text:
-                from binary_protocol import CLIPBOARD_MAX
-                reply({"t": "clipboard_sync", "s": text[:CLIPBOARD_MAX]})
+            text = pyperclip.paste() or ""
         except Exception:
             pass
+        from binary_protocol import CLIPBOARD_MAX
+        reply({"t": "clipboard_sync", "s": text[:CLIPBOARD_MAX]})
     return t
 
 

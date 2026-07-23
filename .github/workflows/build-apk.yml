@@ -368,7 +368,7 @@ jobs:
                   assert ac["t"] == "auth_ok" and ac.get("binary") is True, ac
                   box_c = cb.Session.derive(core.PIN, salt_c)
                   await wclip.send(box_c.seal(bp.encode({"t":"clipboard_request"})))
-                  raw_c = await wclip.recv()
+                  raw_c = await asyncio.wait_for(wclip.recv(), 10)
                   resp_c = json.loads(box_c.open(raw_c).decode())
                   assert resp_c["t"] == "clipboard_sync" and "s" in resp_c
               print("OK - clipboard_request E2E via WebSocket")
