@@ -220,6 +220,7 @@ object WsClient {
     fun power(action: String) = send(JSONObject().put("t", "power").put("a", action))
     fun volSet(v: Int) = send(JSONObject().put("t", "volset").put("v", v))
     fun volGet() = send("volget")
+    fun requestClipboard() = send(JSONObject().put("t", "clipboard_request"))
 
     // ──────────────────────────── WebSocket internals ────────────────────
 
@@ -241,9 +242,18 @@ object WsClient {
 
             override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
                 val box = crypto ?: return
-                val plain = try { String(box.open(bytes.toByteArray())) }
+                val plain = try { box.open(bytes.toByteArray()) }
                             catch (e: Exception) { return }
-                handleJson(plain, webSocket, pin, token, appVersion)
+                // v3.4: coba binary decode dulu, fallback ke JSON
+                if (binaryEnabled) {
+                    val binMsg = BinaryProtocol.decode(plain)
+                    if (binMsg != null) {
+                        handleServerBinary(binMsg)
+                        return
+                    }
+                }
+                val text = try { String(plain) } catch (e: Exception) { return }
+                handleJson(text, webSocket, pin, token, appVersion)
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -383,6 +393,19 @@ object WsClient {
             else -> {
                 _serverMessages.tryEmit(o)
                 onMessage?.invoke(o)
+            }
+        }
+    }
+
+    private fun handleServerBinary(msg: JSONObject) {
+        when (msg.optString("t")) {
+            "clipboard_sync" -> {
+                _serverMessages.tryEmit(msg)
+                onMessage?.invoke(msg)
+            }
+            else -> {
+                _serverMessages.tryEmit(msg)
+                onMessage?.invoke(msg)
             }
         }
     }

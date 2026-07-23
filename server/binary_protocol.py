@@ -29,6 +29,8 @@ CMD_RADIO      = 0x0D   # device_id: u8
 CMD_POWER      = 0x0E   # action_id: u8
 CMD_BRIGHT     = 0x0F   # delta: i8
 CMD_PING       = 0x10   # (empty)
+CMD_CLIPBOARD_SYNC    = 0x11   # len: u16, utf8_bytes:[len]
+CMD_CLIPBOARD_REQUEST = 0x12   # (empty)
 
 # ── Lookup tables ────────────────────────────────────────────────────────────
 _BUTTON_IDS = {"left": 0, "right": 1, "middle": 2}
@@ -62,6 +64,7 @@ _VK_NAMES = {v: k for k, v in _VK_IDS.items()}
 
 # Key ID 0x00 = custom/UTF8, diikuti len:u16 + bytes
 KEY_CUSTOM = 0x00
+CLIPBOARD_MAX = 10000  # max clipboard payload bytes
 
 
 # ── Encoder ──────────────────────────────────────────────────────────────────
@@ -164,6 +167,16 @@ def encode(msg: dict) -> bytes | None:
     if t == "ping":
         return struct.pack("<B", CMD_PING)
 
+    if t == "clipboard_sync":
+        text = msg.get("s", "")
+        encoded = text.encode("utf-8")
+        if len(encoded) > CLIPBOARD_MAX:
+            encoded = encoded[:CLIPBOARD_MAX]
+        return struct.pack("<BH", CMD_CLIPBOARD_SYNC, len(encoded)) + encoded
+
+    if t == "clipboard_request":
+        return struct.pack("<B", CMD_CLIPBOARD_REQUEST)
+
     return None
 
 
@@ -254,6 +267,14 @@ def decode(data: bytes) -> dict | None:
 
         if cmd == CMD_PING:
             return {"t": "ping"}
+
+        if cmd == CMD_CLIPBOARD_SYNC:
+            _, tlen = struct.unpack_from("<BH", data, 0)
+            text = data[3:3 + tlen].decode("utf-8")
+            return {"t": "clipboard_sync", "s": text}
+
+        if cmd == CMD_CLIPBOARD_REQUEST:
+            return {"t": "clipboard_request"}
 
     except (struct.error, IndexError, UnicodeDecodeError):
         return None

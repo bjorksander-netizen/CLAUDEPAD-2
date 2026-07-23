@@ -347,6 +347,15 @@ def handle_message(m, reply):
         reply({"t": "radio_result", "d": which, "ok": ok, "msg": msg})
     elif t == "ping":
         reply({"t": "pong"})
+    elif t == "clipboard_request":
+        try:
+            import pyperclip
+            text = pyperclip.paste()
+            if text:
+                from binary_protocol import CLIPBOARD_MAX
+                reply({"t": "clipboard_sync", "s": text[:CLIPBOARD_MAX]})
+        except Exception:
+            pass
     return t
 
 

@@ -100,6 +100,7 @@ class ConnectionRepository private constructor() {
     fun media(action: String) = WsClient.media(action)
     fun volSet(v: Int) = WsClient.volSet(v)
     fun volGet() = WsClient.volGet()
+    fun requestClipboard() = WsClient.requestClipboard()
 
     // ──────────────────────────── System commands ────────────────────────
 

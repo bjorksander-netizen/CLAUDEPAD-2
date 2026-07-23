@@ -32,6 +32,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     /** Kirim aksi daya ke PC. */
     fun power(action: String) = repo.power(action)
 
+    fun requestClipboard() = repo.requestClipboard()
+
     /** Simpan token. */
     fun clearToken() {
         val context = getApplication<Application>()

@@ -213,6 +213,42 @@
             </LinearLayout>
         </LinearLayout>
 
+        <!-- ==== Clipboard ==== -->
+        <TextView style="@style/SectionLabel" android:text="CLIPBOARD" />
+
+        <LinearLayout style="@style/SettingCard">
+            <LinearLayout android:id="@+id/rowClipSync" style="@style/RowItem">
+                <TextView style="@style/RowTitle" android:text="sinkron clipboard dari PC" />
+                <TextView android:id="@+id/tvClipSync" style="@style/RowToggle"
+                    android:text="aktif" />
+            </LinearLayout>
+            <View style="@style/Divider" />
+            <LinearLayout android:id="@+id/rowClipRequest" style="@style/RowItem">
+                <TextView style="@style/RowTitle" android:text="minta clipboard PC" />
+                <TextView style="@style/RowValue" android:text="›" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- ==== Log Diagnostik ==== -->
+        <TextView style="@style/SectionLabel" android:text="LOG DIAGNOSTIK" />
+
+        <LinearLayout style="@style/SettingCard">
+            <LinearLayout android:id="@+id/rowLogView" style="@style/RowItem">
+                <TextView style="@style/RowTitle" android:text="lihat log terbaru" />
+                <TextView style="@style/RowValue" android:text="›" />
+            </LinearLayout>
+            <View style="@style/Divider" />
+            <LinearLayout android:id="@+id/rowLogExport" style="@style/RowItem">
+                <TextView style="@style/RowTitle" android:text="bagikan log" />
+                <TextView style="@style/RowValue" android:text="↗" />
+            </LinearLayout>
+            <View style="@style/Divider" />
+            <LinearLayout android:id="@+id/rowLogClear" style="@style/RowItem">
+                <TextView style="@style/RowTitle" android:text="hapus log" />
+                <TextView style="@style/RowValue" android:text="✕" />
+            </LinearLayout>
+        </LinearLayout>
+
         <!-- ==== Tentang ==== -->
         <TextView style="@style/SectionLabel" android:text="TENTANG" />
 

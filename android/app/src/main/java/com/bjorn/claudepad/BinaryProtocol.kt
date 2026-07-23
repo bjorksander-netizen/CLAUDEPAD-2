@@ -33,6 +33,8 @@ object BinaryProtocol {
     private const val CMD_POWER    = 0x0E
     private const val CMD_BRIGHT   = 0x0F
     private const val CMD_PING     = 0x10
+    private const val CMD_CLIPBOARD_SYNC    = 0x11.toByte()
+    private const val CMD_CLIPBOARD_REQUEST = 0x12.toByte()
     private const val KEY_CUSTOM   = 0x00
 
     // ── Lookup tables ──
@@ -174,7 +176,35 @@ object BinaryProtocol {
                 byteArrayOf(CMD_BRIGHT.toByte(), d)
             }
             "ping" -> byteArrayOf(CMD_PING.toByte())
+            "clipboard_request" -> byteArrayOf(CMD_CLIPBOARD_REQUEST)
+            "clipboard_sync" -> {
+                val s = msg.optString("s", "")
+                val encoded = s.toByteArray(Charsets.UTF_8)
+                if (encoded.size > 10000) return null
+                val buf = ByteBuffer.allocate(3 + encoded.size).order(ByteOrder.LITTLE_ENDIAN)
+                buf.put(CMD_CLIPBOARD_SYNC)
+                buf.putShort(encoded.size.toShort())
+                buf.put(encoded)
+                buf.array()
+            }
             else -> null
         }
+    }
+
+    /** Decode binary packet ke JSON. Kembalikan null kalau tidak valid. */
+    fun decode(data: ByteArray): JSONObject? {
+        if (data.isEmpty()) return null
+        val cmd = data[0]
+        return try {
+            when (cmd) {
+                CMD_CLIPBOARD_SYNC -> {
+                    val tlen = ByteBuffer.wrap(data, 1, 2).order(ByteOrder.LITTLE_ENDIAN).short.toInt() and 0xFFFF
+                    val text = String(data, 3, tlen, Charsets.UTF_8)
+                    JSONObject().put("t", "clipboard_sync").put("s", text)
+                }
+                CMD_CLIPBOARD_REQUEST -> JSONObject().put("t", "clipboard_request")
+                else -> null
+            }
+        } catch (e: Exception) { null }
     }
 }

@@ -10,6 +10,7 @@ a = Analysis(
     datas=[('fix_firewall.bat', '.')],
     hiddenimports=[
         'input_core', 'system_ctl', 'crypto_box', 'paths', 'binary_protocol',
+        'log_recorder', 'pyperclip',
         'pycaw', 'comtypes', 'pystray', 'PIL', 'websockets',
     ],
     hookspath=[],

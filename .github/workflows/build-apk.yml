@@ -111,6 +111,8 @@ jobs:
               {"t":"bright","d":10},
               {"t":"bright","d":-5},
               {"t":"ping"},
+              {"t":"clipboard_sync","s":"hello world"},
+              {"t":"clipboard_request"},
           ]
 
           for msg in cases:
@@ -151,6 +153,19 @@ jobs:
           # Decode data rusak harus return None
           assert bp.decode(b"") is None
           assert bp.decode(b"\xff\x00") is None
+
+          # Clipboard sync: size limit
+          enc = bp.encode({"t":"clipboard_sync","s":"x" * 20000})
+          assert enc is not None
+          dec = bp.decode(enc)
+          assert len(dec["s"]) == bp.CLIPBOARD_MAX
+          print("OK - clipboard_sync size limit")
+
+          # Clipboard request round-trip
+          enc = bp.encode({"t":"clipboard_request"})
+          dec = bp.decode(enc)
+          assert dec["t"] == "clipboard_request"
+          print("OK - clipboard_request round-trip")
 
           # Ukuran paket: move harus 5 bytes (1+2+2)
           assert len(bp.encode({"t":"move","dx":0,"dy":0})) == 5
@@ -333,6 +348,29 @@ jobs:
                   at2 = json.loads(await wt2.recv())
                   assert at2["t"] == "auth_ok", at2
               print("OK - pairing token terenkripsi RSA diterima")
+
+              # v3.4: uji clipboard request
+              async with websockets.connect("ws://127.0.0.1:8765/ws") as wclip:
+                  await wclip.send(json.dumps({"t":"hello"}))
+                  hc = json.loads(await wclip.recv())
+                  salt_c = bytes.fromhex(hc["salt"])
+                  enc_pin_c = cb.rsa_encrypt(
+                      cb.rsa_pubkey_from_b64(hc["pubkey"]),
+                      core.PIN.encode("utf-8"))
+                  await wclip.send(json.dumps({
+                      "t": "auth",
+                      "pin_enc": base64.b64encode(enc_pin_c).decode(),
+                      "ver": srv.APP_VERSION,
+                      "binary": True,
+                  }))
+                  ac = json.loads(await wclip.recv())
+                  assert ac["t"] == "auth_ok" and ac.get("binary") is True, ac
+                  box_c = cb.Session.derive(core.PIN, salt_c)
+                  await wclip.send(box_c.seal(bp.encode({"t":"clipboard_request"})))
+                  raw_c = await wclip.recv()
+                  resp_c = json.loads(box_c.open(raw_c).decode())
+                  assert resp_c["t"] == "clipboard_sync" and "s" in resp_c
+              print("OK - clipboard_request E2E via WebSocket")
 
               await asyncio.sleep(0.4)
               assert len(core.CLIENTS) == 0

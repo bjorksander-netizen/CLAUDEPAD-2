@@ -171,6 +171,20 @@ class ControlActivity : AppCompatActivity() {
                         }
                     }
                 }
+
+                // ─── Clipboard sync toast ───
+                launch {
+                    vm.showClipboardToast.collect { show ->
+                        if (show) {
+                            val text = vm.remoteClipboard.value
+                            val preview = if (text.length > 50) text.take(50) + "…" else text
+                            Toast.makeText(this@ControlActivity,
+                                "📋 PC: $preview",
+                                Toast.LENGTH_SHORT).show()
+                            vm.onClipboardToastShown()
+                        }
+                    }
+                }
             }
         }
     }

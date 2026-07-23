@@ -65,6 +65,8 @@ class SettingsActivity : AppCompatActivity() {
         bindPower()
         bindMacros()
         bindPingLog()
+        bindClipboard()
+        bindLogRecorder()
         bindAbout()
 
         findViewById<TextView>(R.id.btnBack).setOnClickListener {
@@ -437,6 +439,74 @@ class SettingsActivity : AppCompatActivity() {
                 }
                 .setNegativeButton("batal", null)
                 .show()
+        }
+    }
+
+    // ──────────────────────────── Clipboard ─────────────────────────────
+
+    private fun bindClipboard() {
+        toggleRow(R.id.rowClipSync, R.id.tvClipSync,
+            { Prefs.autoClipboardSync(this) },
+            { v -> Prefs.setAutoClipboardSync(this, v) })
+
+        findViewById<View>(R.id.rowClipRequest).setOnClickListener {
+            Haptics.medium()
+            if (vm.isConnected) {
+                vm.requestClipboard()
+                toast("meminta clipboard PC…")
+            } else {
+                toast("belum terhubung ke pc")
+            }
+        }
+    }
+
+    // ──────────────────────────── Log Diagnostik ────────────────────────
+
+    private fun bindLogRecorder() {
+        findViewById<View>(R.id.rowLogView).setOnClickListener {
+            Haptics.light()
+            val entries = LogRecorder.recentEntries(this)
+            val text = entries.joinToString("\n") { it }
+            showText("log terbaru", if (text.isEmpty()) "belum ada log" else text)
+        }
+
+        findViewById<View>(R.id.rowLogExport).setOnClickListener {
+            Haptics.medium()
+            shareLog()
+        }
+
+        findViewById<View>(R.id.rowLogClear).setOnClickListener {
+            Haptics.medium()
+            AlertDialog.Builder(this)
+                .setTitle("hapus log")
+                .setMessage("Semua file log diagnostic akan dihapus.")
+                .setPositiveButton("hapus") { _, _ ->
+                    LogRecorder.clear(this)
+                    toast("log dihapus")
+                }
+                .setNegativeButton("batal", null)
+                .show()
+        }
+    }
+
+    private fun shareLog() {
+        val file = LogRecorder.exportFile(this)
+        if (file == null) {
+            toast("belum ada log tersimpan")
+            return
+        }
+        try {
+            val uri = FileProvider.getUriForFile(
+                this, "$packageName.fileprovider", file)
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = "application/json"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_SUBJECT, "CLAUDEPAD — log diagnostic")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(send, "bagikan log diagnostic"))
+        } catch (e: Exception) {
+            showText("gagal membagikan", "Tidak bisa menyimpan berkas log.\n\n${e.message}")
         }
     }
 

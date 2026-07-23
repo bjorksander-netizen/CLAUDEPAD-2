@@ -31,13 +31,15 @@ import input_core as core
 import system_ctl
 import crypto_box
 import binary_protocol
+import log_recorder
+import time as _time
 from input_core import (CLIENTS, LOGQ, WS_PORT, HOSTNAME, log, local_ips,
                         local_ips_detailed, enable_usb_mode, discovery_loop,
                         handle_message, volume_get, firewall_status,
                         fix_firewall, check_rate_limit, record_failed_attempt,
                         reset_failed_attempts)
 
-APP_VERSION = "3.3"
+APP_VERSION = "3.4"
 
 # RSA-2048 keypair: digenerate sekali saat server start.
 # Public key dikirim ke HP di hello_ok supaya HP bisa mengenkripsi PIN.
@@ -128,6 +130,9 @@ def forget_tokens():
 ACTIVE_SOCKETS = set()
 MAIN_LOOP = None
 
+# Registry sesi per client untuk clipboard sync
+_CLIENT_SESSIONS = {}  # ws -> {"crypto": session, "binary": bool, "peer": str}
+
 
 def disconnect_clients():
     """Putuskan semua klien yang sedang terhubung (dipanggil dari GUI)."""
@@ -170,6 +175,7 @@ async def handle(ws):
 
     def reply(obj):
         data = json.dumps(obj)
+        log_recorder.log("out", str(obj.get("t", "?")), str(obj)[:200], peer)
         if crypto is not None:
             asyncio.create_task(ws.send(crypto.seal(data.encode("utf-8"))))
         else:
@@ -191,6 +197,7 @@ async def handle(ws):
                     except Exception:
                         m = None
                     if m is not None:
+                        log_recorder.log("in", str(m.get("t", "?")), str(m)[:200], peer)
                         handle_message(m, reply)
                         continue
                 # Fallback ke JSON
@@ -312,20 +319,72 @@ async def handle(ws):
                     log(f"[+] {peer} terautentikasi"
                         + (" (token tersimpan)" if new_token else
                            " (token tepercaya)" if by_token else ""))
+                    _CLIENT_SESSIONS[ws] = {
+                        "crypto": crypto,
+                        "binary": binary_enabled,
+                        "peer": peer,
+                    }
                 elif m.get("t") == "auth":
                     record_failed_attempt(peer)
                     await ws.send(json.dumps({"t": "auth_fail", "reason": "pin"}))
                     log(f"[!] {peer} PIN salah")
                 continue
+            # Log semua pesan masuk
+            peer_name = peer
+            log_recorder.log("in", str(m.get("t", "?")), str(m)[:200], peer_name)
             handle_message(m, reply)
     except websockets.ConnectionClosed:
         pass
     except Exception as e:
         log(f"[!] Error dari {peer}: {e}")
     finally:
+        _CLIENT_SESSIONS.pop(ws, None)
         ACTIVE_SOCKETS.discard(ws)
         CLIENTS.pop(peer, None)
         log(f"[-] {peer} terputus")
+
+
+# ── Clipboard sync (PC → HP) ──
+_LAST_CLIPBOARD = ""
+
+def clipboard_poller():
+    """Poll clipboard PC secara periodik, kirim ke semua client yang terhubung."""
+    global _LAST_CLIPBOARD
+    try:
+        import pyperclip
+    except ImportError:
+        log("[!] pyperclip tidak ada — clipboard sync dinonaktifkan")
+        return
+    while True:
+        try:
+            text = pyperclip.paste()
+            if isinstance(text, str) and text and text != _LAST_CLIPBOARD:
+                _LAST_CLIPBOARD = text
+                encoded = binary_protocol.encode({"t": "clipboard_sync", "s": text})
+                if encoded is None:
+                    continue
+                for ws, sess in list(_CLIENT_SESSIONS.items()):
+                    if not sess.get("binary"):
+                        continue
+                    box = sess.get("crypto")
+                    try:
+                        if box:
+                            import asyncio
+                            loop = MAIN_LOOP
+                            if loop:
+                                asyncio.run_coroutine_threadsafe(
+                                    ws.send(box.seal(encoded)), loop)
+                        else:
+                            import asyncio
+                            loop = MAIN_LOOP
+                            if loop:
+                                asyncio.run_coroutine_threadsafe(
+                                    ws.send(encoded), loop)
+                    except Exception:
+                        pass
+        except Exception:
+            pass  # pyperclip gagal di headless/CI
+        _time.sleep(1.5)
 
 
 def _health_body():
@@ -400,7 +459,9 @@ def start_server_thread():
         except Exception as e:
             SERVER_ERROR[0] = f"Server gagal jalan: {type(e).__name__}: {e}"
             log(f"[!] {SERVER_ERROR[0]}")
+    log_recorder.start()
     threading.Thread(target=discovery_loop, daemon=True).start()
+    threading.Thread(target=clipboard_poller, daemon=True).start()
     threading.Thread(target=run, daemon=True).start()
 
 
@@ -539,6 +600,27 @@ def run_gui():
              accent=True)
     flat_btn(btnbar, "Putuskan", disconnect_clients)
     flat_btn(btnbar, "Perbaiki Firewall", do_fix_firewall)
+
+    def export_log():
+        files = log_recorder.export_logs()
+        if not files:
+            log("[i] Belum ada log tersimpan")
+            return
+        from tkinter import filedialog
+        dest = filedialog.askdirectory(title="Pilih folder untuk menyimpan log")
+        if not dest:
+            return
+        import shutil
+        count = 0
+        for name, path in files:
+            try:
+                shutil.copy2(path, os.path.join(dest, name))
+                count += 1
+            except Exception:
+                pass
+        log(f"[i] {count} file log disalin ke {dest}")
+
+    flat_btn(btnbar, "Ekspor Log", export_log)
 
     # ---- log ----
     tk.Label(root, text="LOG", font=_mono(9), bg=BG, fg=MUTED,

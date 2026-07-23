@@ -67,6 +67,16 @@ class ControlViewModel(application: Application) : AndroidViewModel(application)
     private var lastVolTime = 0L
     private var volErrToasted = false
 
+    // ──────────────────────────── Clipboard state ─────────────────────────
+
+    /** Clipboard dari PC. */
+    private val _remoteClipboard = MutableStateFlow("")
+    val remoteClipboard: StateFlow<String> = _remoteClipboard.asStateFlow()
+
+    /** Toast untuk clipboard sync. */
+    private val _showClipboardToast = MutableStateFlow(false)
+    val showClipboardToast: StateFlow<Boolean> = _showClipboardToast.asStateFlow()
+
     // ──────────────────────────── Server messages ────────────────────────
 
     /** Toast dari server (power_result, radio_result). */
@@ -206,6 +216,20 @@ class ControlViewModel(application: Application) : AndroidViewModel(application)
                 _toastHapticOk.value = ok
                 _toastMessage.value = msgText
             }
+            "clipboard_sync" -> {
+                val text = msg.optString("s", "")
+                _remoteClipboard.value = text
+                _showClipboardToast.value = true
+                if (Prefs.autoClipboardSync(getApplication())) {
+                    try {
+                        val cm = getApplication<Application>()
+                            .getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                                as android.content.ClipboardManager
+                        cm.setPrimaryClip(
+                            android.content.ClipData.newPlainText("PC clipboard", text))
+                    } catch (_: Exception) { }
+                }
+            }
         }
     }
 
@@ -218,4 +242,10 @@ class ControlViewModel(application: Application) : AndroidViewModel(application)
     fun onVolumeErrorShown() {
         _volumeError.value = null
     }
+
+    /** Minta clipboard dari PC. */
+    fun requestClipboard() = repo.requestClipboard()
+
+    /** Toast clipboard sudah ditampilkan. */
+    fun onClipboardToastShown() { _showClipboardToast.value = false }
 }

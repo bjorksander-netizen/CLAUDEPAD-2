@@ -109,4 +109,9 @@ object Prefs {
 
     fun pin(ctx: Context): String = sp(ctx).getString("pin", "") ?: ""
     fun setPin(ctx: Context, v: String) = sp(ctx).edit().putString("pin", v).apply()
+
+    /** Auto-sync clipboard dari PC. Default: true. */
+    fun autoClipboardSync(ctx: Context) = sp(ctx).getBoolean("auto_clip_sync", true)
+    fun setAutoClipboardSync(ctx: Context, v: Boolean) =
+        sp(ctx).edit().putBoolean("auto_clip_sync", v).apply()
 }
