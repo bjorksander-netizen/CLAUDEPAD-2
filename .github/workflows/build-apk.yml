@@ -350,6 +350,7 @@ jobs:
               print("OK - pairing token terenkripsi RSA diterima")
 
               # v3.4: uji clipboard request
+              import binary_protocol as bp
               async with websockets.connect("ws://127.0.0.1:8765/ws") as wclip:
                   await wclip.send(json.dumps({"t":"hello"}))
                   hc = json.loads(await wclip.recv())
@@ -397,7 +398,6 @@ jobs:
               print("OK - filter adapter virtual")
 
               # v3.3: uji binary protocol via WebSocket terenkripsi
-              import binary_protocol as bp
               async with websockets.connect("ws://127.0.0.1:8765/ws") as wb:
                   await wb.send(json.dumps({"t":"hello"}))
                   hb = json.loads(await wb.recv())
