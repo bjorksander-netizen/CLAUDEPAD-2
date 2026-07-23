@@ -24,6 +24,7 @@ object LogRecorder {
     private val running = AtomicBoolean(false)
     @Volatile private var currentFile: File? = null
     @Volatile private var currentSize = 0L
+    @Volatile private var appContext: Context? = null
 
     private fun logDir(ctx: Context): File {
         val dir = File(ctx.filesDir, "logs")
@@ -33,6 +34,7 @@ object LogRecorder {
 
     fun start(ctx: Context) {
         if (running.getAndSet(true)) return
+        appContext = ctx.applicationContext
         Thread {
             while (running.get()) {
                 val entry = queue.poll()
@@ -74,7 +76,7 @@ object LogRecorder {
     }
 
     private fun rotateIfNeeded() {
-        val ctx = App.instance ?: return
+        val ctx = appContext ?: return
         val dir = logDir(ctx)
         val stamp = SimpleDateFormat("yyyy-MM-dd_HHmmss", Locale.US).format(Date())
         val file = File(dir, "session_$stamp.jsonl")
