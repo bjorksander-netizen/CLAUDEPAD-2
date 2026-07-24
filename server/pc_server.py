@@ -40,7 +40,7 @@ from input_core import (CLIENTS, LOGQ, WS_PORT, HOSTNAME, log, local_ips,
                         fix_firewall, check_rate_limit, record_failed_attempt,
                         reset_failed_attempts)
 
-APP_VERSION = "3.5"
+APP_VERSION = "3.6"
 
 # RSA-2048 keypair: digenerate sekali saat server start.
 # Public key dikirim ke HP di hello_ok supaya HP bisa mengenkripsi PIN.
