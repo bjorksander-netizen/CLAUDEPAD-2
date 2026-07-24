@@ -8,6 +8,7 @@ Menggunakan `pyaudiowpatch` (dengan PyAudio sebagai fallback) dan `numpy`.
 
 import asyncio
 import socket
+import struct
 import threading
 import time
 import sys
@@ -37,7 +38,28 @@ class AudioStreamServer:
         self.running = False
         self.thread = None
         self.p = None
-        
+
+    def find_vb_cable_output(self):
+        """Cari VB-Audio Virtual Cable Input device (output device dari perspektif Python)."""
+        try:
+            wasapi_info = self.p.get_host_api_info_by_type(pyaudio.paWASAPI)
+            for i in range(wasapi_info["deviceCount"]):
+                try:
+                    dev = self.p.get_device_info_by_host_api_device_index(
+                        wasapi_info["index"], i
+                    )
+                    if ("CABLE Input" in dev["name"]
+                            and "VB-Audio" in dev["name"]
+                            and dev["maxOutputChannels"] > 0):
+                        print(f"[*] VB-Audio Virtual Cable ditemukan: {dev['name']} "
+                              f"({int(dev['defaultSampleRate'])}Hz, {int(dev['maxOutputChannels'])}ch)")
+                        return dev
+                except Exception:
+                    continue
+        except Exception as e:
+            print(f"[!] Gagal mencari VB-Audio: {e}")
+        return None
+
     def start(self):
         if self.running:
             return
@@ -75,6 +97,12 @@ class AudioStreamServer:
         except Exception as e:
             print(f"[!] Gagal bind audio socket ke port {self.port}: {e}")
             self.running = False
+            if self.p:
+                try:
+                    self.p.terminate()
+                except Exception:
+                    pass
+                self.p = None
             return
 
         while self.running:
@@ -84,8 +112,10 @@ class AudioStreamServer:
                     conn, addr = self.server_socket.accept()
                 except socket.timeout:
                     continue
-                except Exception:
-                    break
+                except Exception as e:
+                    if self.running:
+                        print(f"[!] Error pada accept: {e}")
+                    continue
 
                 print(f"[+] Koneksi audio diterima dari {addr}")
                 self._handle_client(conn)
@@ -145,19 +175,54 @@ class AudioStreamServer:
 
         def stream_phone_to_pc():
             try:
-                # Buka output stream untuk memutar audio mic dari HP ke PC (atau virtual cable)
+                vb_cable = self.find_vb_cable_output()
+
+                if vb_cable:
+                    output_device_index = vb_cable["index"]
+                    output_channels = min(int(vb_cable["maxOutputChannels"]), 2)
+                    output_rate = int(vb_cable["defaultSampleRate"])
+                    # HP selalu kirim mono (1ch), VB-Cable butuh stereo (2ch)
+                    need_stereo = (output_channels == 2)
+                    print(f"[*] Phone->PC: output ke VB-Audio Cable "
+                          f"({output_rate}Hz, {output_channels}ch, stereo_convert={need_stereo})")
+                else:
+                    output_device_index = None
+                    output_channels = 1
+                    output_rate = RATE
+                    need_stereo = False
+                    print("[!] VB-Audio Virtual Cable tidak ditemukan. "
+                          "Install dari https://vb-audio.com/Cable/ "
+                          "Audio akan diputar dari speaker default.")
+
                 stream = self.p.open(
                     format=pyaudio.paInt16,
-                    channels=1,
-                    rate=RATE,
+                    channels=output_channels,
+                    rate=output_rate,
                     output=True,
+                    output_device_index=output_device_index,
                     frames_per_buffer=CHUNK
                 )
+
                 while not stop_event.is_set() and self.running:
                     try:
                         data = conn.recv(CHUNK * 2)
                         if not data:
                             break
+                        if need_stereo and data:
+                            if np is not None:
+                                mono_samples = np.frombuffer(data, dtype=np.int16)
+                                stereo_samples = np.column_stack(
+                                    (mono_samples, mono_samples)
+                                ).tobytes()
+                                data = stereo_samples
+                            else:
+                                mono_samples = struct.unpack(
+                                    f'<{len(data)//2}h', data
+                                )
+                                stereo_samples = b''.join(
+                                    struct.pack('<hh', s, s) for s in mono_samples
+                                )
+                                data = stereo_samples
                         stream.write(data)
                     except Exception:
                         break

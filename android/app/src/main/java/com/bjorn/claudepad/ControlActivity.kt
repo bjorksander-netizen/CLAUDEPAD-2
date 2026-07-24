@@ -114,6 +114,7 @@ class ControlActivity : AppCompatActivity() {
                                 tvStatus.text = "${info.hostName} · ${info.transport}"
                                 trackpad.deviceName = info.hostName
                                 RemoteService.update(this@ControlActivity)
+                                autoStartAudioWithPermissionCheck()
                             }
                             is WsClient.ConnectionState.Error -> {
                                 tvStatus.text = state.message
@@ -605,6 +606,7 @@ class ControlActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        AudioStreamManager.onStatusChanged = null
         AudioStreamManager.stop()
         pingRunning = false
         WifiPerf.release()
@@ -628,6 +630,25 @@ class ControlActivity : AppCompatActivity() {
                 Toast.makeText(this, "Izin mikrofon ditolak — audio streaming tidak bisa jalan",
                     Toast.LENGTH_LONG).show()
             }
+        }
+    }
+
+    // ──────────────────────────── Audio auto-start ─────────────────────
+
+    /**
+     * Mengecek izin RECORD_AUDIO dan otomatis memulai audio streaming.
+     * Jika izin belum diberikan, akan meminta izin terlebih dahulu.
+     * Jika izin ditolak, user masih bisa memulai audio secara manual via tombol.
+     */
+    private fun autoStartAudioWithPermissionCheck() {
+        if (AudioStreamManager.active) return
+
+        if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)
+            == android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            AudioStreamManager.start()
+        } else {
+            requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 101)
         }
     }
 

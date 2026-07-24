@@ -187,11 +187,20 @@ jobs:
           assert aus.AUDIO_PORT == 8767, f"port salah: {aus.AUDIO_PORT}"
           print(f"OK - audio_stream modul loaded, port {aus.AUDIO_PORT}")
 
-          # pyaudiowpatch hanya tersedia di Windows; di Linux CI wajar tidak ada
+          # v3.5: Pastikan struct tersedia (untuk mono->stereo conversion)
+          import struct
+          print("OK - struct tersedia")
+
+          # v3.5: Pastikan find_vb_cable_output ada di AudioStreamServer
+          srv = aus.AudioStreamServer()
+          assert hasattr(srv, 'find_vb_cable_output'), "find_vb_cable_output tidak ditemukan"
+          print("OK - find_vb_cable_output tersedia")
+
+          # v3.5: VB-Cable detection harus return None di Linux (tidak ada VB-Audio)
           if aus.pyaudio is None:
               print("SKIP - pyaudiowpatch/pyaudio tidak tersedia (Linux CI tanpa sound card)")
           else:
-              print(f"OK - pyaudio tersedia")
+              print("OK - pyaudio tersedia")
           PY
 
       - name: Uji binary protocol E2E via WebSocket
