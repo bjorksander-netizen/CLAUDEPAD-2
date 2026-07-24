@@ -28,7 +28,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependency server
-        run: pip install "websockets==${{ matrix.websockets }}" cryptography keyring pyaudiowpatch numpy
+        run: pip install "websockets==${{ matrix.websockets }}" cryptography keyring
 
       - name: Uji kripto vs RFC 8439
         working-directory: server
@@ -186,6 +186,12 @@ jobs:
           assert hasattr(aus, 'stop_audio_server'), "stop_audio_server tidak ditemukan"
           assert aus.AUDIO_PORT == 8767, f"port salah: {aus.AUDIO_PORT}"
           print(f"OK - audio_stream modul loaded, port {aus.AUDIO_PORT}")
+
+          # pyaudiowpatch hanya tersedia di Windows; di Linux CI wajar tidak ada
+          if aus.pyaudio is None:
+              print("SKIP - pyaudiowpatch/pyaudio tidak tersedia (Linux CI tanpa sound card)")
+          else:
+              print(f"OK - pyaudio tersedia")
           PY
 
       - name: Uji binary protocol E2E via WebSocket

@@ -11,7 +11,10 @@ import socket
 import threading
 import time
 import sys
-import numpy as np
+try:
+    import numpy as np
+except ImportError:
+    np = None
 
 try:
     import pyaudiowpatch as pyaudio
