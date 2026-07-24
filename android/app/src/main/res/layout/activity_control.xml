@@ -249,9 +249,41 @@
 
             <com.bjorn.claudepad.DpadView
                 android:id="@+id/dpad"
-                android:layout_width="150dp"
-                android:layout_height="150dp"
-                android:layout_gravity="center" />
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
         </FrameLayout>
+    </LinearLayout>
+
+    <!-- ============ Panel Kontrol Audio (v3.5) ============ -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="8dp"
+        android:gravity="center_vertical"
+        android:background="@drawable/glass_panel"
+        android:padding="10dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="AUDIO (v3.5)"
+            android:textColor="@color/text"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <TextView
+            android:id="@+id/btnAudioToggle"
+            style="@style/KeyGlassAccent"
+            android:layout_width="wrap_content"
+            android:layout_height="38dp"
+            android:paddingHorizontal="16dp"
+            android:text="Mulai Audio"
+            android:textSize="12sp" />
     </LinearLayout>
 </LinearLayout>

@@ -85,6 +85,7 @@ class ControlActivity : AppCompatActivity() {
         setupMedia()
         setupDpad()
         setupTopBar()
+        setupAudioControl()
         buildMacroRow()
         applyAccent()
 
@@ -604,6 +605,7 @@ class ControlActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        AudioStreamManager.stop()
         pingRunning = false
         WifiPerf.release()
         MoveSender.reset()
@@ -612,5 +614,45 @@ class ControlActivity : AppCompatActivity() {
         typeDialog?.dismiss()
         advancePopup?.dismiss()
         if (isFinishing && !isChangingConfigurations) vm.disconnect()
+    }
+
+    // v3.5: Handle izin RECORD_AUDIO untuk audio streaming
+    override fun onRequestPermissionsResult(
+        requestCode: Int, permissions: Array<out String>, grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 101) {
+            if (grantResults.isNotEmpty() && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                AudioStreamManager.start()
+            } else {
+                Toast.makeText(this, "Izin mikrofon ditolak — audio streaming tidak bisa jalan",
+                    Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun setupAudioControl() {
+        val btnAudio = findViewById<TextView>(R.id.btnAudioToggle)
+        
+        AudioStreamManager.onStatusChanged = { active, msg ->
+            runOnUiThread {
+                btnAudio.text = if (active) "Matikan Audio" else "Mulai Audio"
+                Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        btnAudio.setOnClickListener {
+            Haptics.medium()
+            if (AudioStreamManager.active) {
+                AudioStreamManager.stop()
+            } else {
+                // Minta izin RECORD_AUDIO jika belum ada
+                if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 101)
+                } else {
+                    AudioStreamManager.start()
+                }
+            }
+        }
     }
 }

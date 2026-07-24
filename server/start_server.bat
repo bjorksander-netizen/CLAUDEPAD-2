@@ -19,6 +19,12 @@ if errorlevel 1 (
   echo Menyiapkan dependency, mohon tunggu...
   python -m pip install --quiet --disable-pip-version-check -r requirements.txt
 )
+REM v3.5: cek juga dependency audio (pyaudiowpatch, numpy)
+python -c "import pyaudiowpatch, numpy" 2>nul
+if errorlevel 1 (
+  echo Menyiapkan dependency audio, mohon tunggu...
+  python -m pip install --quiet --disable-pip-version-check -r requirements.txt
+)
 
 start "" pythonw pc_server.py
 exit

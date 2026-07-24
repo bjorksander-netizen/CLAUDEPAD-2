@@ -28,7 +28,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependency server
-        run: pip install "websockets==${{ matrix.websockets }}" cryptography keyring
+        run: pip install "websockets==${{ matrix.websockets }}" cryptography keyring pyaudiowpatch numpy
 
       - name: Uji kripto vs RFC 8439
         working-directory: server
@@ -173,6 +173,19 @@ jobs:
           assert len(bp.encode({"t":"scroll","dy":120,"dx":0})) == 5
 
           print(f"OK - {len(cases)} command diuji encode/decode round-trip")
+          PY
+
+      - name: Uji modul audio stream (import & basic check)
+        working-directory: server
+        run: |
+          python - <<'PY'
+          import audio_stream as aus
+          # Pastikan modul bisa diimport dan kelas tersedia
+          assert hasattr(aus, 'AudioStreamServer'), "AudioStreamServer tidak ditemukan"
+          assert hasattr(aus, 'start_audio_server'), "start_audio_server tidak ditemukan"
+          assert hasattr(aus, 'stop_audio_server'), "stop_audio_server tidak ditemukan"
+          assert aus.AUDIO_PORT == 8767, f"port salah: {aus.AUDIO_PORT}"
+          print(f"OK - audio_stream modul loaded, port {aus.AUDIO_PORT}")
           PY
 
       - name: Uji binary protocol E2E via WebSocket
@@ -563,7 +576,7 @@ jobs:
         working-directory: server
         run: |
           python -m pip install --upgrade pip
-          pip install websockets pycaw comtypes pystray pillow pyinstaller cryptography keyring
+          pip install websockets pycaw comtypes pystray pillow pyinstaller cryptography keyring pyaudiowpatch numpy
 
       - name: Baca versi server
         id: sver

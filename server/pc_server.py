@@ -32,6 +32,7 @@ import system_ctl
 import crypto_box
 import binary_protocol
 import log_recorder
+import audio_stream
 import time as _time
 from input_core import (CLIENTS, LOGQ, WS_PORT, HOSTNAME, log, local_ips,
                         local_ips_detailed, enable_usb_mode, discovery_loop,
@@ -39,7 +40,7 @@ from input_core import (CLIENTS, LOGQ, WS_PORT, HOSTNAME, log, local_ips,
                         fix_firewall, check_rate_limit, record_failed_attempt,
                         reset_failed_attempts)
 
-APP_VERSION = "3.4"
+APP_VERSION = "3.5"
 
 # RSA-2048 keypair: digenerate sekali saat server start.
 # Public key dikirim ke HP di hello_ok supaya HP bisa mengenkripsi PIN.
@@ -460,6 +461,7 @@ def start_server_thread():
             SERVER_ERROR[0] = f"Server gagal jalan: {type(e).__name__}: {e}"
             log(f"[!] {SERVER_ERROR[0]}")
     log_recorder.start()
+    audio_stream.start_audio_server()
     threading.Thread(target=discovery_loop, daemon=True).start()
     threading.Thread(target=clipboard_poller, daemon=True).start()
     threading.Thread(target=run, daemon=True).start()

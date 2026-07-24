@@ -8,6 +8,9 @@ netsh advfirewall firewall delete rule name="CLAUDEPAD UDP" >nul 2>&1
 
 netsh advfirewall firewall add rule name="CLAUDEPAD TCP" dir=in action=allow protocol=TCP localport=8765 profile=any
 netsh advfirewall firewall add rule name="CLAUDEPAD UDP" dir=in action=allow protocol=UDP localport=8766 profile=any
+REM v3.5: port audio streaming
+netsh advfirewall firewall delete rule name="CLAUDEPAD AUDIO" >nul 2>&1
+netsh advfirewall firewall add rule name="CLAUDEPAD AUDIO" dir=in action=allow protocol=TCP localport=8767 profile=any
 
 REM Izinkan juga program Python secara eksplisit (sebagian sistem memblokir
 REM per-aplikasi, bukan per-port).

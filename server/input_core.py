@@ -477,7 +477,12 @@ def firewall_status():
             ["netsh", "advfirewall", "firewall", "show", "rule", "name=CLAUDEPAD TCP"],
             capture_output=True, text=True, timeout=10,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        return r.returncode == 0 and "CLAUDEPAD" in r.stdout
+        r2 = subprocess.run(
+            ["netsh", "advfirewall", "firewall", "show", "rule", "name=CLAUDEPAD AUDIO"],
+            capture_output=True, text=True, timeout=10,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        return (r.returncode == 0 and "CLAUDEPAD" in r.stdout and
+                r2.returncode == 0 and "CLAUDEPAD" in r2.stdout)
     except Exception:
         return False
 
@@ -646,8 +651,12 @@ def enable_usb_mode():
         r = subprocess.run(["adb", "reverse", f"tcp:{WS_PORT}", f"tcp:{WS_PORT}"],
                            capture_output=True, text=True, timeout=20,
                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        # v3.5: forward port audio juga (8767) agar streaming audio bisa lewat USB
+        subprocess.run(["adb", "reverse", "tcp:8767", "tcp:8767"],
+                       capture_output=True, text=True, timeout=20,
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         if r.returncode == 0:
-            log("[USB] Aktif. Di aplikasi HP tekan tombol USB.")
+            log("[USB] Aktif (+ audio port 8767). Di aplikasi HP tekan tombol USB.")
             return True
         log("[USB] Gagal: " + (r.stderr.strip() or "cek kabel & USB debugging"))
     except FileNotFoundError:
