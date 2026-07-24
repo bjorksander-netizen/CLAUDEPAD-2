@@ -5,6 +5,7 @@ bersamaan, dan server menolak koneksi bila keduanya berbeda.
 
 | Versi | Inti perubahan |
 |---|---|
+| **v3.6** | Tombol Speaker ON/OFF — cegah echo saat audio streaming |
 | **v3.5** | Fitur Audio Streaming via USB (Mic HP & Speaker PC/HP) |
 | **v3.1** | Server .exe mandiri — tidak perlu install Python |
 | v3.0 | Notifikasi kontrol persisten · tombol makro kustom · enkripsi lalu lintas |

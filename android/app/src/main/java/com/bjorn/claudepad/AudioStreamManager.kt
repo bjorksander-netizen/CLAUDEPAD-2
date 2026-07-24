@@ -15,7 +15,7 @@ import java.nio.ByteOrder
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Pengelola Audio Streaming Dua Arah untuk CLAUDEPAD v3.5
+ * Pengelola Audio Streaming Dua Arah untuk CLAUDEPAD v3.6
  * Menghubungkan ke TCP socket port 8767 (di-forward via adb reverse tcp:8767 tcp:8767).
  * - Menggunakan AudioRecord untuk menangkap mic HP dan mengirimkannya ke PC.
  * - Menggunakan AudioTrack untuk menerima audio dari PC dan memutarnya di speaker HP.
@@ -34,8 +34,19 @@ object AudioStreamManager {
 
     var onStatusChanged: ((Boolean, String) -> Unit)? = null
 
+    @Volatile
+    var speakerEnabled: Boolean = true
+        private set
+
     val active: Boolean
         get() = isRunning.get()
+
+    fun setSpeakerEnabled(enabled: Boolean) {
+        speakerEnabled = enabled
+        Log.i(TAG, "Speaker ${
+            if (enabled) "diaktifkan" else "dimatikan"
+        }")
+    }
 
     fun start() {
         if (isRunning.get()) return
@@ -164,9 +175,11 @@ object AudioStreamManager {
                 }
                 if (read <= 0) break
 
-                val written = audioTrack.write(buffer, 0, read)
-                if (written < 0) {
-                    Log.w(TAG, "AudioTrack write error: $written")
+                if (speakerEnabled) {
+                    val written = audioTrack.write(buffer, 0, read)
+                    if (written < 0) {
+                        Log.w(TAG, "AudioTrack write error: $written")
+                    }
                 }
                 yield()
             }

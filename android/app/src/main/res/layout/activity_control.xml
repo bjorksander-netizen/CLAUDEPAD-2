@@ -254,7 +254,7 @@
         </FrameLayout>
     </LinearLayout>
 
-    <!-- ============ Panel Kontrol Audio (v3.5) ============ -->
+    <!-- ============ Panel Kontrol Audio (v3.6) ============ -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -267,7 +267,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="AUDIO (v3.5)"
+            android:text="AUDIO (v3.6)"
             android:textColor="@color/text"
             android:textSize="12sp"
             android:textStyle="bold" />
@@ -276,6 +276,17 @@
             android:layout_width="0dp"
             android:layout_height="1dp"
             android:layout_weight="1" />
+
+        <TextView
+            android:id="@+id/btnSpeakerToggle"
+            style="@style/KeyGlass"
+            android:layout_width="wrap_content"
+            android:layout_height="38dp"
+            android:paddingHorizontal="14dp"
+            android:text="🔊"
+            android:textSize="14sp"
+            android:layout_marginEnd="6dp"
+            android:contentDescription="Toggle speaker" />
 
         <TextView
             android:id="@+id/btnAudioToggle"

@@ -654,6 +654,12 @@ class ControlActivity : AppCompatActivity() {
 
     private fun setupAudioControl() {
         val btnAudio = findViewById<TextView>(R.id.btnAudioToggle)
+        val btnSpeaker = findViewById<TextView>(R.id.btnSpeakerToggle)
+        
+        // Initialize speaker button state from actual flag
+        val initialSpeakerOn = AudioStreamManager.speakerEnabled
+        btnSpeaker.text = if (initialSpeakerOn) "🔊" else "🔇"
+        btnSpeaker.alpha = if (initialSpeakerOn) 1f else 0.5f
         
         AudioStreamManager.onStatusChanged = { active, msg ->
             runOnUiThread {
@@ -674,6 +680,19 @@ class ControlActivity : AppCompatActivity() {
                     AudioStreamManager.start()
                 }
             }
+        }
+
+        // Speaker toggle — langsung efek tanpa reconnect
+        btnSpeaker.setOnClickListener {
+            Haptics.light()
+            val newEnabled = !AudioStreamManager.speakerEnabled
+            AudioStreamManager.setSpeakerEnabled(newEnabled)
+            btnSpeaker.text = if (newEnabled) "🔊" else "🔇"
+            btnSpeaker.alpha = if (newEnabled) 1f else 0.5f
+            Toast.makeText(this,
+                if (newEnabled) "Speaker aktif" else "Speaker dimatikan",
+                Toast.LENGTH_SHORT
+            ).show()
         }
     }
 }
