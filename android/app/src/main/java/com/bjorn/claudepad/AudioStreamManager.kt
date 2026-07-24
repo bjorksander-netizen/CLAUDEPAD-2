@@ -29,7 +29,7 @@ object AudioStreamManager {
     private const val ENCODING = AudioFormat.ENCODING_PCM_16BIT
 
     private val isRunning = AtomicBoolean(false)
-    private scope: CoroutineScope? = null
+    private var scope: CoroutineScope? = null
     private var socket: Socket? = null
 
     var onStatusChanged: ((Boolean, String) -> Unit)? = null
@@ -103,7 +103,7 @@ object AudioStreamManager {
             val data = ByteArray(bufferSize)
             val outputStream = sock.getOutputStream()
 
-            while.let { isRunning.get() && !sock.isClosed } {
+            while (isRunning.get() && !sock.isClosed) {
                 val read = audioRecord.read(data, 0, data.size)
                 if (read > 0) {
                     try {
